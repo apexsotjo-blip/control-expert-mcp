@@ -1,0 +1,40 @@
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+
+# Control Expert project / archive binaries (regenerable test outputs)
+*.stu
+*.sta
+*.zef
+*.xef
+*.ztx
+*.bak
+*.BAK
+
+# Proprietary / customer data — NEVER commit
+# (real project exports learned via the read tools during the recreation test)
+tools/bigtest/ref/
+tools/bigtest/weaknesses.jsonl
+tools/bigtest/settings_to_apply.json
+tools/bigtest/*_app.xef.xml
+tools/bigtest/*_cpu_module.xml
+tools/bigtest/*_prmcfg.xml
+ref_*.xml
+master_ds_full.xml
+master_control_params.xml
+
+# Vendor extracts
+tools/pdf_images/
+
+# Editor / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db

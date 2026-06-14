@@ -1,0 +1,139 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<STExchangeFile>
+	<fileHeader company="Schneider Automation" product="Control Expert V14.0 - 190112" dateTime="date_and_time#2026-6-11-11:35:6" content="Structured source file" DTDVersion="41"></fileHeader>
+	<contentHeader name="injection molding machine " version="0.0.000" dateTime="date_and_time#2018-12-5-16:37:24">
+		<comment>Information 
+This project is a OFFLINE project. That means the whole application is only for                                        use in SIMULATION mode
+There is also a Microsoft Word file, that contains the differences between PL7/Concept to Unity and more information for this application..
+Please read the "welcome file" at the process overview before starting this simulation.
+
+Developed by Stefan Probst
+07.05.2003</comment>
+	</contentHeader>
+	<program>
+		<identProgram name="Weighing_Material_A" type="section" task="MAST"></identProgram>
+		<STSource>(* start weighing process for material A *)
+
+if  re (Start_process) or re (new_material_demand) then
+	set (weight_empty);
+	set (valve_a_closed);
+	set (valve_b_closed);
+	reset (valve_b_open);
+end_if;
+
+(* creating internal pulse *)
+
+sec:=%S6;
+ms_100:=%s5;
+ms_10:=%s4;
+
+(* opening valve A *)
+
+if re (weight_empty) then
+	set(valve_a_open);
+	reset (valve_a_closed);
+	reset (ready_to_mix);
+	reset (weighing_a_done);
+end_if;
+
+(* filling weight till demandet value *)
+
+if valve_a_open and re (sec)and Weighing_material_A&lt;=material_a_value then
+	inc_int (Weighing_Material_A);
+	reset (weight_empty);
+end_if;
+
+
+(* close valve A if demandet value reached *)
+(* set internal bit flapp A =&gt; for operator screen *)
+
+if weighing_material_a=material_a_value then
+	reset (valve_a_open);
+	set (valve_a_closed);
+	set (weighing_a_done);
+	Flapp_a:=true;
+		if flapp_a then 
+			weighing_material_a:=0;
+			set (material_a_in);
+		end_if;		
+end_if;
+
+if fe (mixing_done) then
+	reset (material_a_in);
+	reset (Material_b_in);
+end_if;
+
+(* delay time for flapp open *)
+
+Flapp (IN := Flapp_A or Flapp_b,
+    PT := t#5s,
+    Q =&gt; Flapp_open);
+</STSource>
+	</program>
+	<dataBlock>
+		<variables name="ready_to_mix" typeName="BOOL">
+			<comment>Mixer ready</comment>
+		</variables>
+		<variables name="Valve_B_closed" typeName="EBOOL">
+			<comment>Material valve B closed</comment>
+		</variables>
+		<variables name="Mixing_done" typeName="EBOOL">
+			<comment>Mixing done</comment>
+		</variables>
+		<variables name="Start_process" typeName="EBOOL">
+			<comment>Internal variable for process start</comment>
+		</variables>
+		<variables name="Flapp_open" typeName="BOOL">
+			<comment>Flapp open</comment>
+		</variables>
+		<variables name="Material_a_in" typeName="BOOL">
+			<comment>Internal bit for material A in feeder</comment>
+		</variables>
+		<variables name="Weighing_Material_A" typeName="INT">
+			<comment>Weighing material A in progress</comment>
+		</variables>
+		<variables name="Flapp_B" typeName="BOOL">
+			<comment>Internal variable (Flapp Material B)</comment>
+		</variables>
+		<variables name="Valve_A_open" typeName="EBOOL">
+			<comment>Material valve A open</comment>
+		</variables>
+		<variables name="Flapp_A" typeName="BOOL">
+			<comment>Internal variable (Flapp Material A)</comment>
+		</variables>
+		<variables name="Weighing_A_done" typeName="BOOL">
+			<comment>Internal bit for weighing material A done</comment>
+		</variables>
+		<variables name="Valve_B_open" typeName="EBOOL">
+			<comment>Material valve B open</comment>
+		</variables>
+		<variables name="Material_b_in" typeName="BOOL">
+			<comment>Internal bit for material B in feeder</comment>
+		</variables>
+		<variables name="new_material_demand" typeName="EBOOL">
+			<comment>New material for feeder demandet</comment>
+		</variables>
+		<variables name="Valve_A_closed" typeName="EBOOL">
+			<comment>Material valve A closed</comment>
+		</variables>
+		<variables name="Weight_empty" typeName="EBOOL">
+			<comment>Weight empty</comment>
+		</variables>
+		<variables name="Sec" typeName="EBOOL">
+			<comment>Variable with 1sec. timebase</comment>
+		</variables>
+		<variables name="Ms_10" typeName="EBOOL">
+			<comment>Variable with 10ms timbase</comment>
+		</variables>
+		<variables name="Flapp" typeName="TP">
+			<comment>Pulse for flapp</comment>
+		</variables>
+		<variables name="material_a_value" typeName="INT">
+			<comment>Value material A</comment>
+			<variableInit value="50"></variableInit>
+		</variables>
+		<variables name="Ms_100" typeName="EBOOL">
+			<comment>Variable with 100ms timebase</comment>
+		</variables>
+	</dataBlock>
+</STExchangeFile>

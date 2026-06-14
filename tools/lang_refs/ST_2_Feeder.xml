@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<STExchangeFile>
+	<fileHeader company="Schneider Automation" product="Control Expert V14.0 - 190112" dateTime="date_and_time#2026-6-11-11:35:6" content="Structured source file" DTDVersion="41"></fileHeader>
+	<contentHeader name="injection molding machine " version="0.0.000" dateTime="date_and_time#2018-12-5-16:37:24">
+		<comment>Information 
+This project is a OFFLINE project. That means the whole application is only for                                        use in SIMULATION mode
+There is also a Microsoft Word file, that contains the differences between PL7/Concept to Unity and more information for this application..
+Please read the "welcome file" at the process overview before starting this simulation.
+
+Developed by Stefan Probst
+07.05.2003</comment>
+	</contentHeader>
+	<program>
+		<identProgram name="Feeder" type="section" task="MAST"></identProgram>
+		<STSource>(* initialisation of feeder *)
+
+if fe (Mixing_done)
+	then
+	feeder_state:=material_a_value+material_b_value;
+	reset (new_material_demand);
+end_if;
+
+(* calculating value feeder state *)
+
+if re (forming) 
+	then
+	dec (feeder_state);
+end_if;
+
+if feeder_state=2 
+	then
+	set (new_material_demand);
+end_if;
+
+if feeder_state&gt;2 
+	then
+	set (feeder_full);
+	else 
+	reset (feeder_full);
+end_if;
+
+if feeder_state&lt;=2 
+	then
+	set (feeder_empty);
+	else 
+	reset (feeder_empty);
+end_if;
+
+(* initialisation of variables for forming process *)
+
+CMeasured_temp:=int_to_real (Measured_temp);
+
+if cmeasured_temp=setpoint_temp 
+	then
+	Temp_ok:=true;
+	else 
+	Temp_ok:=false;
+end_if;
+
+if feeder_full and not feeder_empty 
+	then
+	Material_ok:=true;
+	else 
+	Material_ok:=false;
+end_if;
+
+if not forming and not feeder_empty and re (sec) 
+	then
+	inc_int (material_in);
+end_if;
+
+if forming 
+	then
+	material_in:=0;
+end_if;
+</STSource>
+	</program>
+	<dataBlock>
+		<variables name="Mixing_done" typeName="EBOOL">
+			<comment>Mixing done</comment>
+		</variables>
+		<variables name="feeder_empty" typeName="BOOL">
+			<comment>Material feeder empty</comment>
+		</variables>
+		<variables name="Measured_temp" typeName="INT">
+			<comment>Measurement of temperature</comment>
+		</variables>
+		<variables name="Temp_ok" typeName="BOOL">
+			<comment>Temperature ok</comment>
+		</variables>
+		<variables name="Cmeasured_temp" typeName="REAL">
+			<comment>Calculating variable for measured temperature</comment>
+		</variables>
+		<variables name="Feeder_state" typeName="INT">
+			<comment>Feeder state</comment>
+		</variables>
+		<variables name="material_b_value" typeName="INT">
+			<comment>Starting value for weighing material B</comment>
+			<variableInit value="20"></variableInit>
+		</variables>
+		<variables name="new_material_demand" typeName="EBOOL">
+			<comment>New material for feeder demandet</comment>
+		</variables>
+		<variables name="Material_ok" typeName="BOOL">
+			<comment>Material value ok</comment>
+		</variables>
+		<variables name="Material_in" typeName="INT">
+			<comment>Internal bit for material in feeder</comment>
+		</variables>
+		<variables name="Forming" typeName="EBOOL">
+			<comment>Forming material in progress</comment>
+		</variables>
+		<variables name="Sec" typeName="EBOOL">
+			<comment>Variable with 1sec. timebase</comment>
+		</variables>
+		<variables name="material_a_value" typeName="INT">
+			<comment>Value material A</comment>
+			<variableInit value="50"></variableInit>
+		</variables>
+		<variables name="Setpoint_temp" typeName="REAL">
+			<comment>Setpoint for temperature</comment>
+		</variables>
+		<variables name="feeder_full" typeName="BOOL">
+			<comment>Material feeder full</comment>
+		</variables>
+	</dataBlock>
+</STExchangeFile>

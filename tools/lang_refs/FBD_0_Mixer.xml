@@ -1,0 +1,158 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<FBDExchangeFile>
+	<fileHeader company="Schneider Automation" product="Control Expert V14.0 - 190112" dateTime="date_and_time#2026-6-11-11:35:6" content="Derived Function Block source file" DTDVersion="41"></fileHeader>
+	<contentHeader name="injection molding machine " version="0.0.000" dateTime="date_and_time#2018-12-5-16:37:24">
+		<comment>Information 
+This project is a OFFLINE project. That means the whole application is only for                                        use in SIMULATION mode
+There is also a Microsoft Word file, that contains the differences between PL7/Concept to Unity and more information for this application..
+Please read the "welcome file" at the process overview before starting this simulation.
+
+Developed by Stefan Probst
+07.05.2003</comment>
+	</contentHeader>
+	<program>
+		<identProgram name="Mixer" type="section" task="MAST"></identProgram>
+		<FBDSource nbRows="24" nbColumns="36">
+			<networkFBD>
+				<FFBBlock instanceName="Refill_feeder" typeName="TON" additionnalPinNumber="0" enEnO="false" width="7" height="6">
+					<objPosition posX="27" posY="25"></objPosition>
+					<descriptionFFB execAfter="">
+						<inputVariable invertedPin="false" formalParameter="EN"></inputVariable>
+						<inputVariable invertedPin="false" formalParameter="IN"></inputVariable>
+						<inputVariable invertedPin="false" formalParameter="PT" effectiveParameter="t#10s"></inputVariable>
+						<outputVariable invertedPin="false" formalParameter="ENO"></outputVariable>
+						<outputVariable invertedPin="false" formalParameter="Q" effectiveParameter="fill_feeder"></outputVariable>
+						<outputVariable invertedPin="false" formalParameter="ET"></outputVariable>
+					</descriptionFFB>
+					<comment>On delay</comment>
+				</FFBBlock>
+				<FFBBlock instanceName=".1" typeName="AND_BOOL" additionnalPinNumber="0" enEnO="false" width="8" height="6">
+					<objPosition posX="10" posY="11"></objPosition>
+					<descriptionFFB execAfter="">
+						<inputVariable invertedPin="false" formalParameter="EN"></inputVariable>
+						<inputVariable invertedPin="false" formalParameter="IN1" effectiveParameter="ready_to_mix"></inputVariable>
+						<inputVariable invertedPin="false" formalParameter="IN2" effectiveParameter="Valve_B_closed"></inputVariable>
+						<outputVariable invertedPin="false" formalParameter="ENO"></outputVariable>
+						<outputVariable invertedPin="false" formalParameter="OUT"></outputVariable>
+					</descriptionFFB>
+					<comment>AND function</comment>
+				</FFBBlock>
+				<FFBBlock instanceName=".3" typeName="AND_BOOL" additionnalPinNumber="0" enEnO="false" width="8" height="6">
+					<objPosition posX="10" posY="23"></objPosition>
+					<descriptionFFB execAfter="">
+						<inputVariable invertedPin="false" formalParameter="EN"></inputVariable>
+						<inputVariable invertedPin="false" formalParameter="IN1" effectiveParameter="Mixing"></inputVariable>
+						<inputVariable invertedPin="true" formalParameter="IN2" effectiveParameter="Sec"></inputVariable>
+						<outputVariable invertedPin="false" formalParameter="ENO"></outputVariable>
+						<outputVariable invertedPin="false" formalParameter="OUT" effectiveParameter="MixerB"></outputVariable>
+					</descriptionFFB>
+					<comment>AND function</comment>
+				</FFBBlock>
+				<FFBBlock instanceName="TP_Mixing_done" typeName="TP" additionnalPinNumber="0" enEnO="false" width="7" height="6">
+					<objPosition posX="27" posY="18"></objPosition>
+					<descriptionFFB execAfter="">
+						<inputVariable invertedPin="false" formalParameter="EN"></inputVariable>
+						<inputVariable invertedPin="false" formalParameter="IN"></inputVariable>
+						<inputVariable invertedPin="false" formalParameter="PT" effectiveParameter="t#12s"></inputVariable>
+						<outputVariable invertedPin="false" formalParameter="ENO"></outputVariable>
+						<outputVariable invertedPin="false" formalParameter="Q" effectiveParameter="Mixing_done"></outputVariable>
+						<outputVariable invertedPin="false" formalParameter="ET"></outputVariable>
+					</descriptionFFB>
+					<comment>Pulse</comment>
+				</FFBBlock>
+				<FFBBlock instanceName="Mixing_motor" typeName="TP" additionnalPinNumber="0" enEnO="false" width="7" height="6">
+					<objPosition posX="27" posY="11"></objPosition>
+					<descriptionFFB execAfter="">
+						<inputVariable invertedPin="false" formalParameter="EN"></inputVariable>
+						<inputVariable invertedPin="false" formalParameter="IN"></inputVariable>
+						<inputVariable invertedPin="false" formalParameter="PT" effectiveParameter="t#10s"></inputVariable>
+						<outputVariable invertedPin="false" formalParameter="ENO"></outputVariable>
+						<outputVariable invertedPin="false" formalParameter="Q" effectiveParameter="Mixing"></outputVariable>
+						<outputVariable invertedPin="false" formalParameter="ET"></outputVariable>
+					</descriptionFFB>
+					<comment>Pulse</comment>
+				</FFBBlock>
+				<FFBBlock instanceName=".2" typeName="AND_BOOL" additionnalPinNumber="0" enEnO="false" width="8" height="6">
+					<objPosition posX="10" posY="17"></objPosition>
+					<descriptionFFB execAfter="">
+						<inputVariable invertedPin="false" formalParameter="EN"></inputVariable>
+						<inputVariable invertedPin="false" formalParameter="IN1" effectiveParameter="Mixing"></inputVariable>
+						<inputVariable invertedPin="false" formalParameter="IN2" effectiveParameter="Sec"></inputVariable>
+						<outputVariable invertedPin="false" formalParameter="ENO"></outputVariable>
+						<outputVariable invertedPin="false" formalParameter="OUT" effectiveParameter="MixerA"></outputVariable>
+					</descriptionFFB>
+					<comment>AND function</comment>
+				</FFBBlock>
+				<linkFB>
+					<linkSource parentObjectName="TP_Mixing_done" pinName="Q">
+						<objPosition posX="33" posY="22"></objPosition>
+					</linkSource>
+					<linkDestination parentObjectName="Refill_feeder" pinName="IN">
+						<objPosition posX="27" posY="29"></objPosition>
+					</linkDestination>
+					<gridObjPosition posX="35" posY="22"></gridObjPosition>
+					<gridObjPosition posX="35" posY="25"></gridObjPosition>
+					<gridObjPosition posX="26" posY="25"></gridObjPosition>
+					<gridObjPosition posX="26" posY="29"></gridObjPosition>
+				</linkFB>
+				<linkFB>
+					<linkSource parentObjectName="Mixing_motor" pinName="Q">
+						<objPosition posX="33" posY="15"></objPosition>
+					</linkSource>
+					<linkDestination parentObjectName="TP_Mixing_done" pinName="IN">
+						<objPosition posX="27" posY="22"></objPosition>
+					</linkDestination>
+					<gridObjPosition posX="35" posY="15"></gridObjPosition>
+					<gridObjPosition posX="35" posY="18"></gridObjPosition>
+					<gridObjPosition posX="26" posY="18"></gridObjPosition>
+					<gridObjPosition posX="26" posY="22"></gridObjPosition>
+				</linkFB>
+				<linkFB>
+					<linkSource parentObjectName=".1" pinName="OUT">
+						<objPosition posX="17" posY="15"></objPosition>
+					</linkSource>
+					<linkDestination parentObjectName="Mixing_motor" pinName="IN">
+						<objPosition posX="27" posY="15"></objPosition>
+					</linkDestination>
+				</linkFB>
+				<textBox width="10" height="3">startin process mixing<objPosition posX="19" posY="5"></objPosition>
+				</textBox>
+			</networkFBD>
+		</FBDSource>
+	</program>
+	<dataBlock>
+		<variables name="ready_to_mix" typeName="BOOL">
+			<comment>Mixer ready</comment>
+		</variables>
+		<variables name="Valve_B_closed" typeName="EBOOL">
+			<comment>Material valve B closed</comment>
+		</variables>
+		<variables name="Mixing_done" typeName="EBOOL">
+			<comment>Mixing done</comment>
+		</variables>
+		<variables name="MixerB" typeName="BOOL">
+			<comment>Internal variable mixer</comment>
+		</variables>
+		<variables name="MixerA" typeName="BOOL">
+			<comment>Internal variable mixer</comment>
+		</variables>
+		<variables name="Refill_feeder" typeName="TON">
+			<comment>Timer for refill feeder</comment>
+		</variables>
+		<variables name="Mixing_motor" typeName="TP">
+			<comment>Pulse for mixing motor</comment>
+		</variables>
+		<variables name="Mixing" typeName="BOOL">
+			<comment>Mixing in progress</comment>
+		</variables>
+		<variables name="Sec" typeName="EBOOL">
+			<comment>Variable with 1sec. timebase</comment>
+		</variables>
+		<variables name="TP_Mixing_done" typeName="TP">
+			<comment>Pulse for mixing done</comment>
+		</variables>
+		<variables name="Fill_feeder" typeName="BOOL">
+			<comment>Fill feeder</comment>
+		</variables>
+	</dataBlock>
+</FBDExchangeFile>

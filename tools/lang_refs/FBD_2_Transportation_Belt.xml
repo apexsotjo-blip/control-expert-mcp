@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<FBDExchangeFile>
+	<fileHeader company="Schneider Automation" product="Control Expert V14.0 - 190112" dateTime="date_and_time#2026-6-11-11:35:6" content="Derived Function Block source file" DTDVersion="41"></fileHeader>
+	<contentHeader name="injection molding machine " version="0.0.000" dateTime="date_and_time#2018-12-5-16:37:24">
+		<comment>Information 
+This project is a OFFLINE project. That means the whole application is only for                                        use in SIMULATION mode
+There is also a Microsoft Word file, that contains the differences between PL7/Concept to Unity and more information for this application..
+Please read the "welcome file" at the process overview before starting this simulation.
+
+Developed by Stefan Probst
+07.05.2003</comment>
+	</contentHeader>
+	<program>
+		<identProgram name="Transportation_Belt" type="section" task="MAST"></identProgram>
+		<FBDSource nbRows="24" nbColumns="36">
+			<networkFBD>
+				<FFBBlock instanceName="Belt_motor" typeName="RS" additionnalPinNumber="0" enEnO="false" width="7" height="6">
+					<objPosition posX="19" posY="6"></objPosition>
+					<descriptionFFB execAfter="">
+						<inputVariable invertedPin="false" formalParameter="EN"></inputVariable>
+						<inputVariable invertedPin="false" formalParameter="S"></inputVariable>
+						<inputVariable invertedPin="false" formalParameter="R1"></inputVariable>
+						<outputVariable invertedPin="false" formalParameter="ENO"></outputVariable>
+						<outputVariable invertedPin="false" formalParameter="Q1" effectiveParameter="Belt_running"></outputVariable>
+					</descriptionFFB>
+					<comment>Bistable function block, reset dominant</comment>
+				</FFBBlock>
+				<FFBBlock instanceName=".1" typeName="AND_BOOL" additionnalPinNumber="1" enEnO="false" width="8" height="7">
+					<objPosition posX="6" posY="6"></objPosition>
+					<descriptionFFB execAfter="">
+						<inputVariable invertedPin="false" formalParameter="EN"></inputVariable>
+						<inputVariable invertedPin="true" formalParameter="IN1" effectiveParameter="Forming"></inputVariable>
+						<inputVariable invertedPin="false" formalParameter="IN2" effectiveParameter="Temp_ok"></inputVariable>
+						<inputVariable invertedPin="false" formalParameter="IN3" effectiveParameter="Material_ok"></inputVariable>
+						<outputVariable invertedPin="false" formalParameter="ENO"></outputVariable>
+						<outputVariable invertedPin="false" formalParameter="OUT"></outputVariable>
+					</descriptionFFB>
+					<comment>AND function</comment>
+				</FFBBlock>
+				<FFBBlock instanceName=".3" typeName="OR_BOOL" additionnalPinNumber="2" enEnO="false" width="7" height="8">
+					<objPosition posX="6" posY="14"></objPosition>
+					<descriptionFFB execAfter="">
+						<inputVariable invertedPin="false" formalParameter="EN"></inputVariable>
+						<inputVariable invertedPin="false" formalParameter="IN1" effectiveParameter="Forming"></inputVariable>
+						<inputVariable invertedPin="true" formalParameter="IN2" effectiveParameter="Start_process"></inputVariable>
+						<inputVariable invertedPin="true" formalParameter="IN3" effectiveParameter="Temp_ok"></inputVariable>
+						<inputVariable invertedPin="true" formalParameter="IN4" effectiveParameter="Material_ok"></inputVariable>
+						<outputVariable invertedPin="false" formalParameter="ENO"></outputVariable>
+						<outputVariable invertedPin="false" formalParameter="OUT"></outputVariable>
+					</descriptionFFB>
+					<comment>OR function</comment>
+				</FFBBlock>
+				<linkFB>
+					<linkSource parentObjectName=".1" pinName="OUT">
+						<objPosition posX="13" posY="10"></objPosition>
+					</linkSource>
+					<linkDestination parentObjectName="Belt_motor" pinName="S">
+						<objPosition posX="19" posY="10"></objPosition>
+					</linkDestination>
+				</linkFB>
+				<linkFB>
+					<linkSource parentObjectName=".3" pinName="OUT">
+						<objPosition posX="12" posY="18"></objPosition>
+					</linkSource>
+					<linkDestination parentObjectName="Belt_motor" pinName="R1">
+						<objPosition posX="19" posY="11"></objPosition>
+					</linkDestination>
+					<gridObjPosition posX="16" posY="18"></gridObjPosition>
+					<gridObjPosition posX="16" posY="11"></gridObjPosition>
+				</linkFB>
+				<textBox width="12" height="2">starting transportation Belt<objPosition posX="11" posY="1"></objPosition>
+				</textBox>
+			</networkFBD>
+		</FBDSource>
+	</program>
+	<dataBlock>
+		<variables name="Start_process" typeName="EBOOL">
+			<comment>Internal variable for process start</comment>
+		</variables>
+		<variables name="Temp_ok" typeName="BOOL">
+			<comment>Temperature ok</comment>
+		</variables>
+		<variables name="Belt_running" typeName="EBOOL">
+			<comment>Transportation belt running</comment>
+		</variables>
+		<variables name="Belt_motor" typeName="RS">
+			<comment>Transportation belt motor</comment>
+		</variables>
+		<variables name="Material_ok" typeName="BOOL">
+			<comment>Material value ok</comment>
+		</variables>
+		<variables name="Forming" typeName="EBOOL">
+			<comment>Forming material in progress</comment>
+		</variables>
+	</dataBlock>
+</FBDExchangeFile>

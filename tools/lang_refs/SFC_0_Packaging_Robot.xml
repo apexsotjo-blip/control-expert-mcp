@@ -1,0 +1,474 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<SFCExchangeFile>
+	<fileHeader company="Schneider Automation" product="Control Expert V14.0 - 190112" dateTime="date_and_time#2026-6-11-11:35:6" content="SFC source file" DTDVersion="41"></fileHeader>
+	<contentHeader name="injection molding machine " version="0.0.000" dateTime="date_and_time#2018-12-5-16:37:24">
+		<comment>Information 
+This project is a OFFLINE project. That means the whole application is only for                                        use in SIMULATION mode
+There is also a Microsoft Word file, that contains the differences between PL7/Concept to Unity and more information for this application..
+Please read the "welcome file" at the process overview before starting this simulation.
+
+Developed by Stefan Probst
+07.05.2003</comment>
+	</contentHeader>
+	<SFCProgram areaNum="0" operatorCtrl="0">
+		<identProgram name="Packaging_Robot" type="section" task="MAST"></identProgram>
+		<chartSource name="Chart">
+			<networkSFC>
+				<step stepType="step" stepName="Rotation">
+					<objPosition posX="0" posY="2"></objPosition>
+					<action qualifier="NONE">
+						<actionName>
+							<sectionName>Left_Rotation</sectionName>
+						</actionName>
+						<tValue>
+							<tLiteral></tLiteral>
+						</tValue>
+					</action>
+					<literals max="" min="" delay=""></literals>
+					<comment>step for rotation left</comment>
+				</step>
+				<step stepType="step" stepName="Packaging">
+					<objPosition posX="0" posY="10"></objPosition>
+					<action qualifier="NONE">
+						<actionName>
+							<sectionName>Material_packaging</sectionName>
+						</actionName>
+						<tValue>
+							<tLiteral></tLiteral>
+						</tValue>
+					</action>
+					<literals max="" min="t#1s" delay=""></literals>
+					<comment>step for packaging and movement right</comment>
+				</step>
+				<step stepType="step" stepName="ten">
+					<objPosition posX="3" posY="8"></objPosition>
+					<action qualifier="NONE">
+						<actionName>
+							<sectionName>Packaging_10_0</sectionName>
+						</actionName>
+						<tValue>
+							<tLiteral></tLiteral>
+						</tValue>
+					</action>
+					<literals max="" min="" delay=""></literals>
+					<comment>step for packaging ten pieces</comment>
+				</step>
+				<step stepType="step" stepName="five">
+					<objPosition posX="0" posY="8"></objPosition>
+					<action qualifier="NONE">
+						<actionName>
+							<sectionName>Packaging_5_0</sectionName>
+						</actionName>
+						<tValue>
+							<tLiteral></tLiteral>
+						</tValue>
+					</action>
+					<literals max="" min="t#2s" delay=""></literals>
+					<comment>step for packaging five pieces</comment>
+				</step>
+				<step stepType="step" stepName="Arm_1">
+					<objPosition posX="0" posY="4"></objPosition>
+					<action qualifier="NONE">
+						<actionName>
+							<sectionName>Arm1</sectionName>
+						</actionName>
+						<tValue>
+							<tLiteral></tLiteral>
+						</tValue>
+					</action>
+					<literals max="" min="t#1s" delay=""></literals>
+					<comment>step for movement arm 1</comment>
+				</step>
+				<step stepType="initialStep" stepName="Start_Robot">
+					<objPosition posX="0" posY="0"></objPosition>
+					<action qualifier="NONE">
+						<actionName>
+							<sectionName>Init_Robot</sectionName>
+						</actionName>
+						<tValue>
+							<tLiteral></tLiteral>
+						</tValue>
+					</action>
+					<literals max="" min="" delay=""></literals>
+					<comment>initialisation of packaging robot</comment>
+				</step>
+				<step stepType="step" stepName="Arm_2">
+					<objPosition posX="0" posY="6"></objPosition>
+					<action qualifier="NONE">
+						<actionName>
+							<sectionName>Arm2</sectionName>
+						</actionName>
+						<tValue>
+							<tLiteral></tLiteral>
+						</tValue>
+					</action>
+					<literals max="" min="t#1s" delay=""></literals>
+					<comment>step for movement arm 2</comment>
+				</step>
+				<altBranch width="4" relativePos="0">
+					<objPosition posX="0" posY="7"></objPosition>
+				</altBranch>
+				<altJoint width="4" relativePos="0">
+					<objPosition posX="0" posY="9"></objPosition>
+				</altJoint>
+				<transition>
+					<objPosition posX="0" posY="1"></objPosition>
+					<transitionCondition invertLogic="false">
+						<variableName>Robot_one.robot_running</variableName>
+					</transitionCondition>
+				</transition>
+				<transition>
+					<objPosition posX="3" posY="9"></objPosition>
+					<transitionCondition invertLogic="false">
+						<variableName>Robot_one.rotation_right_ten_done</variableName>
+					</transitionCondition>
+				</transition>
+				<transition>
+					<objPosition posX="0" posY="9"></objPosition>
+					<transitionCondition invertLogic="false">
+						<variableName>Robot_one.rotation_right_five_done</variableName>
+					</transitionCondition>
+				</transition>
+				<transition>
+					<objPosition posX="0" posY="7"></objPosition>
+					<transitionCondition invertLogic="false">
+						<variableName>Robot_one.packaging_5</variableName>
+					</transitionCondition>
+				</transition>
+				<transition>
+					<objPosition posX="0" posY="5"></objPosition>
+					<transitionCondition invertLogic="false">
+						<variableName>Robot_one.Arm_one_done</variableName>
+					</transitionCondition>
+				</transition>
+				<transition>
+					<objPosition posX="3" posY="7"></objPosition>
+					<transitionCondition invertLogic="false">
+						<variableName>Robot_one.packaging_10</variableName>
+					</transitionCondition>
+				</transition>
+				<transition>
+					<objPosition posX="0" posY="3"></objPosition>
+					<transitionCondition invertLogic="false">
+						<variableName>Robot_one.Rotation_left_done</variableName>
+					</transitionCondition>
+				</transition>
+				<transition>
+					<objPosition posX="0" posY="11"></objPosition>
+					<transitionCondition invertLogic="false">
+						<variableName>Robot_one.material_down_done</variableName>
+					</transitionCondition>
+				</transition>
+				<jumpSFC stepName="Start_Robot">
+					<objPosition posX="0" posY="12"></objPosition>
+				</jumpSFC>
+				<textBox width="2" height="1">step for packaging five pieces<objPosition posX="1" posY="8"></objPosition>
+				</textBox>
+				<textBox width="2" height="1">step for packaging and movement right<objPosition posX="1" posY="10"></objPosition>
+				</textBox>
+				<textBox width="2" height="1">step for movement arm 2<objPosition posX="1" posY="6"></objPosition>
+				</textBox>
+				<textBox width="2" height="2">step for packaging ten pieces<objPosition posX="4" posY="8"></objPosition>
+				</textBox>
+				<textBox width="1" height="1">initialisation of packaging robot<objPosition posX="1" posY="0"></objPosition>
+				</textBox>
+				<textBox width="2" height="1">step for movement arm 1<objPosition posX="1" posY="4"></objPosition>
+				</textBox>
+				<textBox width="2" height="1">step for rotation left<objPosition posX="1" posY="2"></objPosition>
+				</textBox>
+			</networkSFC>
+		</chartSource>
+		<actionSource name="Init_Robot">
+			<STSource>(* initialisation of packaging robot *)
+
+if Start_process 
+	then
+	Robot_one.robot_running:=true;
+	else 
+	Robot_one.robot_running:=false;
+end_if;
+
+(* resetting last step *)
+
+If Start_Robot.x 
+	then
+	reset (Robot_one.material_down_done);
+end_if;
+</STSource>
+		</actionSource>
+		<actionSource name="Left_Rotation">
+			<STSource>(* rotation left after initialisation *)
+
+if Robot_one.robot_running and re (Belt_running) 
+	then
+	set (Robot_one.Rotation_left);	
+end_if;
+
+if robot_one.robot_running and not Robot_one.Rotation_left and rotation.t &gt;= t#300ms 
+	then
+	set   (Robot_one.init);
+	else 
+	reset (Robot_one.init);
+end_if;
+
+(* delay time for left rotation *)
+
+Robot_rotation (IN := Robot_one.Rotation_left,
+  PT := t#1s,
+  Q =&gt; Robot_one.cvRobot_one);
+
+(* rotation left done *)
+
+if Robot_one.cvRobot_one 
+	then
+	set (Robot_one.Rotation_left_done);
+	reset (Robot_one.Rotation_left);
+	else 
+	reset (Robot_one.Rotation_left_done);
+end_if;
+</STSource>
+		</actionSource>
+		<actionSource name="Material_packaging">
+			<STSource>(* packaging *)
+
+if     Robot_one.rotation_right_five_done 
+   or  Robot_one.rotation_right_ten_done 
+   and Packaging.t&gt;t#200ms 
+	then
+	set (Robot_one.arm_right);
+end_if;
+
+(* delay time for rotation right *)
+
+Arm_right_Timer (IN := robot_one.arm_right,
+  		 PT := t#1s,
+  		  Q =&gt; robot_one.cv_arm_right);
+
+(* material down in box *)
+
+if robot_one.cv_arm_right 
+	then
+	reset (Material_picked_off);
+	set   (Robot_one.material_down);
+	reset (Robot_one.rotation_right_five_done);
+	reset (Robot_one.rotation_right_ten_done);
+	set   (Robot_one.cv_material_down_done);
+	reset (Robot_one.arm_right);
+end_if;
+
+(* delay time for material down in box *)
+
+Material_down_Timer (IN := Robot_one.material_down,
+  		     PT := t#1s,
+		      Q =&gt; Robot_one.cv_material_down_done);
+
+(* material down done *)
+
+if Robot_one.cv_material_down_done 
+	then
+	reset (Robot_one.material_down);
+	set   (Robot_one.material_down_done);
+end_if;
+</STSource>
+		</actionSource>
+		<actionSource name="Arm1">
+			<STSource>(* movement of arm one if rotation left done *)
+
+if     Robot_one.Rotation_left_done 
+   and Arm_1.t&gt;t#100ms 
+	then
+	set (Robot_one.Arm_one);	
+end_if;
+
+(* delay time for movement arm one *)
+
+Arm_1_Timer (IN := Robot_one.Arm_one,
+	     PT := t#1s,
+	      Q =&gt; Robot_one.cvArm_one);
+
+(* movement arm one doen *)
+
+if Robot_one.cvArm_one 
+	then
+	set   (Robot_one.Arm_one_done);
+	reset (Robot_one.Arm_one);
+	reset (robot_one.cvArm_one);
+	reset (Robot_one.Rotation_left_done);
+	else 
+	reset (Robot_one.Arm_one_done);
+end_if;
+</STSource>
+		</actionSource>
+		<actionSource name="Arm2">
+			<STSource>(* movement of arm two if movement arm one done *)
+
+if Robot_one.Arm_one_done and arm_2.t&gt;t#100ms 
+	then
+	set (Robot_one.Arm_two);	
+end_if;
+
+(* delay time for movement arm two *)
+
+Arm_2_Timer (IN := Robot_one.Arm_two,
+	     PT := t#1s,
+	      Q =&gt; Robot_one.cvArm_two);
+
+(* movement arm two done *)
+
+if Robot_one.cvArm_two 
+	then
+	set   (Robot_one.Arm_two_done);
+	reset (Robot_one.Arm_two);
+	reset (Robot_one.cvArm_two);
+	reset (Robot_one.Arm_one_done);
+	else 
+	reset (Robot_one.Arm_two_done);
+end_if;
+
+(* decide between step five and step ten *)
+
+if Robot_one.Arm_two_done and five_pices 
+	then
+	set   (Robot_one.packaging_5);
+	reset (Robot_one.packaging_10);
+	else 
+	reset (Robot_one.packaging_5);
+end_if;
+
+If Robot_one.Arm_two_done and ten_pices 
+	then
+	reset (Robot_one.packaging_5);
+	set   (Robot_one.packaging_10);
+	else 
+	reset (Robot_one.packaging_10);
+end_if;
+</STSource>
+		</actionSource>
+		<actionSource name="Packaging_5_0">
+			<STSource>(* if five coosen initialisation fo step five *)
+
+if Robot_one.Arm_two_done and five.t&gt;t#200ms then
+	set (Robot_one.Taking_Material);
+	set (Material_picked_off);
+end_if;
+
+(* delay time for taking material *)
+
+PACKAGING_TIMER (IN := Robot_one.Taking_Material,
+       		 PT := t#1s,
+       		  Q =&gt; hb_Packaging);
+
+(* movement arm two done rotating right to packageing *)
+
+if hb_Packaging 
+	then
+	reset (Robot_one.Arm_two_done);
+	set   (Robot_one.Rotation_right_five);
+	reset (Robot_one.Taking_Material);
+
+end_if;
+
+(* delay time for rotation right *) 
+
+ROTATION_RIGHT_TIMER   (IN := Robot_one.Rotation_right_five,
+			PT := t#1s,
+			Q =&gt; hb_rotation_right);
+
+(* rotation right done *)
+
+if hb_rotation_right 
+	then
+	set   (Robot_one.rotation_right_five_done);
+	reset (Robot_one.Rotation_right_five);
+end_if;
+</STSource>
+		</actionSource>
+		<actionSource name="Packaging_10_0">
+			<STSource>(* if ten coosen initialisation fo step five *)
+
+if Robot_one.Arm_two_done and ten.t&gt;t#200ms 
+	then
+	set (Robot_one.Taking_Material);
+	set (Material_picked_off);
+end_if;
+
+(* delay time for taking material *)
+
+PACKAGING_TIMER (IN := Robot_one.Taking_Material,
+       		 PT := t#1s,
+       		  Q =&gt; hb_Packaging);
+
+(* movement arm two done rotating right to packageing *)
+
+if hb_Packaging 
+	then
+	reset (Robot_one.Arm_two_done);
+	set   (Robot_one.Rotation_right_ten);
+	reset (Robot_one.Taking_Material);
+
+end_if;
+
+(* delay time for rotation right *)
+
+ROTATION_RIGHT_TIMER (IN := Robot_one.Rotation_right_ten,
+		      PT := t#1s,
+		       Q =&gt; hb_rotation_right);
+
+(* rotation right done *)
+
+if hb_rotation_right 
+	then
+	set   (Robot_one.rotation_right_ten_done);
+	reset (Robot_one.Rotation_right_ten);
+end_if;
+</STSource>
+		</actionSource>
+	</SFCProgram>
+	<dataBlock>
+		<variables name="Robot_rotation" typeName="TON">
+			<comment>Timer for robot rotation</comment>
+		</variables>
+		<variables name="Start_process" typeName="EBOOL">
+			<comment>Internal variable for process start</comment>
+		</variables>
+		<variables name="Arm_1_Timer" typeName="TON">
+			<comment>Timer for movement arm 1</comment>
+		</variables>
+		<variables name="Packaging_Timer" typeName="TON">
+			<comment>Timer for packaging</comment>
+		</variables>
+		<variables name="Robot_one" typeName="Robot">
+			<comment>Robot one</comment>
+		</variables>
+		<variables name="five_pices" typeName="BOOL">
+			<comment>Packaging 5 pices</comment>
+		</variables>
+		<variables name="hb_rotation_right" typeName="BOOL">
+			<comment>Internal bit robot rotation right</comment>
+		</variables>
+		<variables name="Rotation_right_Timer" typeName="TON">
+			<comment>Timer for rotation right</comment>
+		</variables>
+		<variables name="Arm_right_Timer" typeName="TON">
+			<comment>Timer for movement arm right</comment>
+		</variables>
+		<variables name="Material_down_Timer" typeName="TON">
+			<comment>Timer for material down</comment>
+		</variables>
+		<variables name="Belt_running" typeName="EBOOL">
+			<comment>Transportation belt running</comment>
+		</variables>
+		<variables name="ten_pices" typeName="BOOL">
+			<comment>Packaging 10 pices</comment>
+		</variables>
+		<variables name="hb_Packaging" typeName="BOOL">
+			<comment>Internal bit packaging</comment>
+		</variables>
+		<variables name="Arm_2_Timer" typeName="TON">
+			<comment>Timer for movement arm 2</comment>
+		</variables>
+		<variables name="Material_picked_off" typeName="EBOOL">
+			<comment>Material picked up from robot</comment>
+		</variables>
+	</dataBlock>
+</SFCExchangeFile>

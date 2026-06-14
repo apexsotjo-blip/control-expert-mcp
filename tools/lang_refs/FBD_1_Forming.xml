@@ -1,0 +1,259 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<FBDExchangeFile>
+	<fileHeader company="Schneider Automation" product="Control Expert V14.0 - 190112" dateTime="date_and_time#2026-6-11-11:35:6" content="Derived Function Block source file" DTDVersion="41"></fileHeader>
+	<contentHeader name="injection molding machine " version="0.0.000" dateTime="date_and_time#2018-12-5-16:37:24">
+		<comment>Information 
+This project is a OFFLINE project. That means the whole application is only for                                        use in SIMULATION mode
+There is also a Microsoft Word file, that contains the differences between PL7/Concept to Unity and more information for this application..
+Please read the "welcome file" at the process overview before starting this simulation.
+
+Developed by Stefan Probst
+07.05.2003</comment>
+	</contentHeader>
+	<program>
+		<identProgram name="Forming" type="section" task="MAST"></identProgram>
+		<FBDSource nbRows="24" nbColumns="36">
+			<networkFBD>
+				<FFBBlock instanceName=".4" typeName="AND" additionnalPinNumber="0" enEnO="false" width="7" height="6">
+					<objPosition posX="40" posY="39"></objPosition>
+					<descriptionFFB execAfter="">
+						<inputVariable invertedPin="false" formalParameter="EN"></inputVariable>
+						<inputVariable invertedPin="false" formalParameter="IN1" effectiveParameter="Conveying_screw"></inputVariable>
+						<inputVariable invertedPin="false" formalParameter="IN2" effectiveParameter="Sec"></inputVariable>
+						<outputVariable invertedPin="false" formalParameter="ENO"></outputVariable>
+						<outputVariable invertedPin="false" formalParameter="OUT" effectiveParameter="CS_A"></outputVariable>
+					</descriptionFFB>
+					<comment>AND function</comment>
+				</FFBBlock>
+				<FFBBlock instanceName="monostable2" typeName="TP" additionnalPinNumber="0" enEnO="false" width="7" height="6">
+					<objPosition posX="7" posY="2"></objPosition>
+					<descriptionFFB execAfter="">
+						<inputVariable invertedPin="false" formalParameter="EN"></inputVariable>
+						<inputVariable invertedPin="false" formalParameter="IN" effectiveParameter="monostable1.Q"></inputVariable>
+						<inputVariable invertedPin="false" formalParameter="PT" effectiveParameter="T#8s"></inputVariable>
+						<outputVariable invertedPin="false" formalParameter="ENO"></outputVariable>
+						<outputVariable invertedPin="false" formalParameter="Q"></outputVariable>
+						<outputVariable invertedPin="false" formalParameter="ET"></outputVariable>
+					</descriptionFFB>
+					<comment>Pulse</comment>
+				</FFBBlock>
+				<FFBBlock instanceName="Conveying_motor" typeName="MotorTwoDirections" additionnalPinNumber="0" enEnO="false" width="15" height="13">
+					<objPosition posX="32" posY="26"></objPosition>
+					<descriptionFFB execAfter="">
+						<inputVariable invertedPin="false" formalParameter="EN"></inputVariable>
+						<inputVariable invertedPin="false" formalParameter="ED" effectiveParameter="1"></inputVariable>
+						<inputVariable invertedPin="false" formalParameter="start"></inputVariable>
+						<inputVariable invertedPin="false" formalParameter="stop"></inputVariable>
+						<inputVariable invertedPin="false" formalParameter="feedback" effectiveParameter="test"></inputVariable>
+						<inputVariable invertedPin="false" formalParameter="left_direction" effectiveParameter="1"></inputVariable>
+						<inputVariable invertedPin="false" formalParameter="right_direction" effectiveParameter="0"></inputVariable>
+						<inputVariable invertedPin="false" formalParameter="fdbk_simul" effectiveParameter="0"></inputVariable>
+						<outputVariable invertedPin="false" formalParameter="ENO"></outputVariable>
+						<outputVariable invertedPin="false" formalParameter="ERROR"></outputVariable>
+						<outputVariable invertedPin="false" formalParameter="running_left" effectiveParameter="Conveying_screw"></outputVariable>
+						<outputVariable invertedPin="false" formalParameter="running_right"></outputVariable>
+						<outputVariable invertedPin="false" formalParameter="fdbk_info"></outputVariable>
+						<outputVariable invertedPin="false" formalParameter="fdbk_et" effectiveParameter="fdbk_ET_conveyer"></outputVariable>
+					</descriptionFFB>
+					<comment>Model for diagnostics user DFB in ST language</comment>
+				</FFBBlock>
+				<FFBBlock instanceName=".1" typeName="AND" additionnalPinNumber="1" enEnO="false" width="7" height="7">
+					<objPosition posX="20" posY="26"></objPosition>
+					<descriptionFFB execAfter="">
+						<inputVariable invertedPin="false" formalParameter="EN"></inputVariable>
+						<inputVariable invertedPin="false" formalParameter="IN1" effectiveParameter="material_ok"></inputVariable>
+						<inputVariable invertedPin="false" formalParameter="IN2" effectiveParameter="Temp_ok"></inputVariable>
+						<inputVariable invertedPin="false" formalParameter="IN3" effectiveParameter="Start_process"></inputVariable>
+						<outputVariable invertedPin="false" formalParameter="ENO"></outputVariable>
+						<outputVariable invertedPin="false" formalParameter="OUT"></outputVariable>
+					</descriptionFFB>
+					<comment>AND function</comment>
+				</FFBBlock>
+				<FFBBlock instanceName=".2" typeName="AND" additionnalPinNumber="0" enEnO="false" width="7" height="6">
+					<objPosition posX="20" posY="2"></objPosition>
+					<descriptionFFB execAfter="">
+						<inputVariable invertedPin="false" formalParameter="EN"></inputVariable>
+						<inputVariable invertedPin="false" formalParameter="IN1" effectiveParameter="Material_ok"></inputVariable>
+						<inputVariable invertedPin="false" formalParameter="IN2" effectiveParameter="Temp_ok"></inputVariable>
+						<outputVariable invertedPin="false" formalParameter="ENO"></outputVariable>
+						<outputVariable invertedPin="false" formalParameter="OUT"></outputVariable>
+					</descriptionFFB>
+					<comment>AND function</comment>
+				</FFBBlock>
+				<FFBBlock instanceName=".5" typeName="OR" additionnalPinNumber="0" enEnO="false" width="7" height="6">
+					<objPosition posX="20" posY="8"></objPosition>
+					<descriptionFFB execAfter="">
+						<inputVariable invertedPin="false" formalParameter="EN"></inputVariable>
+						<inputVariable invertedPin="true" formalParameter="IN1" effectiveParameter="Start_process"></inputVariable>
+						<inputVariable invertedPin="false" formalParameter="IN2"></inputVariable>
+						<outputVariable invertedPin="false" formalParameter="ENO"></outputVariable>
+						<outputVariable invertedPin="false" formalParameter="OUT"></outputVariable>
+					</descriptionFFB>
+					<comment>OR function</comment>
+				</FFBBlock>
+				<FFBBlock instanceName=".3" typeName="AND" additionnalPinNumber="0" enEnO="false" width="7" height="6">
+					<objPosition posX="7" posY="35"></objPosition>
+					<descriptionFFB execAfter="">
+						<inputVariable invertedPin="false" formalParameter="EN"></inputVariable>
+						<inputVariable invertedPin="true" formalParameter="IN1" effectiveParameter="material_ok"></inputVariable>
+						<inputVariable invertedPin="true" formalParameter="IN2" effectiveParameter="Temp_ok"></inputVariable>
+						<outputVariable invertedPin="false" formalParameter="ENO"></outputVariable>
+						<outputVariable invertedPin="false" formalParameter="OUT"></outputVariable>
+					</descriptionFFB>
+					<comment>AND function</comment>
+				</FFBBlock>
+				<FFBBlock instanceName="Forming_motor" typeName="MotorTwoDirections" additionnalPinNumber="0" enEnO="false" width="15" height="13">
+					<objPosition posX="32" posY="2"></objPosition>
+					<descriptionFFB execAfter="">
+						<inputVariable invertedPin="false" formalParameter="EN"></inputVariable>
+						<inputVariable invertedPin="false" formalParameter="ED" effectiveParameter="1"></inputVariable>
+						<inputVariable invertedPin="false" formalParameter="start"></inputVariable>
+						<inputVariable invertedPin="false" formalParameter="stop"></inputVariable>
+						<inputVariable invertedPin="false" formalParameter="feedback"></inputVariable>
+						<inputVariable invertedPin="false" formalParameter="left_direction" effectiveParameter="1"></inputVariable>
+						<inputVariable invertedPin="false" formalParameter="right_direction" effectiveParameter="0"></inputVariable>
+						<inputVariable invertedPin="false" formalParameter="fdbk_simul" effectiveParameter="0"></inputVariable>
+						<outputVariable invertedPin="false" formalParameter="ENO"></outputVariable>
+						<outputVariable invertedPin="false" formalParameter="ERROR"></outputVariable>
+						<outputVariable invertedPin="false" formalParameter="running_left" effectiveParameter="Forming"></outputVariable>
+						<outputVariable invertedPin="false" formalParameter="running_right"></outputVariable>
+						<outputVariable invertedPin="false" formalParameter="fdbk_info"></outputVariable>
+						<outputVariable invertedPin="false" formalParameter="fdbk_et" effectiveParameter="fdbk_ET_forming"></outputVariable>
+					</descriptionFFB>
+					<comment>Model for diagnostics user DFB in ST language</comment>
+				</FFBBlock>
+				<FFBBlock instanceName=".6" typeName="OR" additionnalPinNumber="0" enEnO="false" width="7" height="6">
+					<objPosition posX="20" posY="34"></objPosition>
+					<descriptionFFB execAfter="">
+						<inputVariable invertedPin="false" formalParameter="EN"></inputVariable>
+						<inputVariable invertedPin="true" formalParameter="IN1" effectiveParameter="Start_process"></inputVariable>
+						<inputVariable invertedPin="false" formalParameter="IN2"></inputVariable>
+						<outputVariable invertedPin="false" formalParameter="ENO"></outputVariable>
+						<outputVariable invertedPin="false" formalParameter="OUT"></outputVariable>
+					</descriptionFFB>
+					<comment>OR function</comment>
+				</FFBBlock>
+				<FFBBlock instanceName="monostable1" typeName="TP" additionnalPinNumber="0" enEnO="false" width="7" height="6">
+					<objPosition posX="7" posY="9"></objPosition>
+					<descriptionFFB execAfter="">
+						<inputVariable invertedPin="false" formalParameter="EN"></inputVariable>
+						<inputVariable invertedPin="true" formalParameter="IN"></inputVariable>
+						<inputVariable invertedPin="false" formalParameter="PT" effectiveParameter="T#4s"></inputVariable>
+						<outputVariable invertedPin="false" formalParameter="ENO"></outputVariable>
+						<outputVariable invertedPin="false" formalParameter="Q"></outputVariable>
+						<outputVariable invertedPin="false" formalParameter="ET"></outputVariable>
+					</descriptionFFB>
+					<comment>Pulse</comment>
+				</FFBBlock>
+				<linkFB>
+					<linkSource parentObjectName=".3" pinName="OUT">
+						<objPosition posX="13" posY="39"></objPosition>
+					</linkSource>
+					<linkDestination parentObjectName=".6" pinName="IN2">
+						<objPosition posX="20" posY="39"></objPosition>
+					</linkDestination>
+				</linkFB>
+				<linkFB>
+					<linkSource parentObjectName=".6" pinName="OUT">
+						<objPosition posX="26" posY="38"></objPosition>
+					</linkSource>
+					<linkDestination parentObjectName="Conveying_motor" pinName="stop">
+						<objPosition posX="32" posY="33"></objPosition>
+					</linkDestination>
+					<gridObjPosition posX="29" posY="38"></gridObjPosition>
+					<gridObjPosition posX="29" posY="33"></gridObjPosition>
+				</linkFB>
+				<linkFB>
+					<linkSource parentObjectName=".5" pinName="OUT">
+						<objPosition posX="26" posY="12"></objPosition>
+					</linkSource>
+					<linkDestination parentObjectName="Forming_motor" pinName="stop">
+						<objPosition posX="32" posY="9"></objPosition>
+					</linkDestination>
+					<gridObjPosition posX="30" posY="12"></gridObjPosition>
+					<gridObjPosition posX="30" posY="9"></gridObjPosition>
+				</linkFB>
+				<linkFB>
+					<linkSource parentObjectName=".1" pinName="OUT">
+						<objPosition posX="26" posY="30"></objPosition>
+					</linkSource>
+					<linkDestination parentObjectName="Conveying_motor" pinName="start">
+						<objPosition posX="32" posY="32"></objPosition>
+					</linkDestination>
+					<gridObjPosition posX="29" posY="30"></gridObjPosition>
+					<gridObjPosition posX="29" posY="32"></gridObjPosition>
+				</linkFB>
+				<linkFB>
+					<linkSource parentObjectName="monostable1" pinName="Q">
+						<objPosition posX="13" posY="13"></objPosition>
+					</linkSource>
+					<linkDestination parentObjectName=".5" pinName="IN2">
+						<objPosition posX="20" posY="13"></objPosition>
+					</linkDestination>
+				</linkFB>
+				<linkFB>
+					<linkSource parentObjectName=".2" pinName="OUT">
+						<objPosition posX="26" posY="6"></objPosition>
+					</linkSource>
+					<linkDestination parentObjectName="Forming_motor" pinName="start">
+						<objPosition posX="32" posY="8"></objPosition>
+					</linkDestination>
+					<gridObjPosition posX="30" posY="6"></gridObjPosition>
+					<gridObjPosition posX="30" posY="8"></gridObjPosition>
+				</linkFB>
+				<linkFB>
+					<linkSource parentObjectName="monostable2" pinName="Q">
+						<objPosition posX="13" posY="6"></objPosition>
+					</linkSource>
+					<linkDestination parentObjectName="monostable1" pinName="IN">
+						<objPosition posX="7" posY="13"></objPosition>
+					</linkDestination>
+					<gridObjPosition posX="15" posY="6"></gridObjPosition>
+					<gridObjPosition posX="15" posY="9"></gridObjPosition>
+					<gridObjPosition posX="6" posY="9"></gridObjPosition>
+					<gridObjPosition posX="6" posY="13"></gridObjPosition>
+				</linkFB>
+				<textBox width="54" height="22">starting forming<objPosition posX="1" posY="1"></objPosition>
+				</textBox>
+				<textBox width="54" height="22">starting conveying screw<objPosition posX="1" posY="25"></objPosition>
+				</textBox>
+			</networkFBD>
+		</FBDSource>
+	</program>
+	<dataBlock>
+		<variables name="Conveying_screw" typeName="BOOL">
+			<comment>Conveying screw</comment>
+		</variables>
+		<variables name="Start_process" typeName="EBOOL">
+			<comment>Internal variable for process start</comment>
+		</variables>
+		<variables name="Conveying_motor" typeName="MotorTwoDirections">
+			<comment>Conveying screw motor</comment>
+		</variables>
+		<variables name="Forming_motor" typeName="MotorTwoDirections">
+			<comment>Forming motor</comment>
+		</variables>
+		<variables name="Temp_ok" typeName="BOOL">
+			<comment>Temperature ok</comment>
+		</variables>
+		<variables name="fdbk_ET_forming" typeName="TIME"></variables>
+		<variables name="monostable2" typeName="TP"></variables>
+		<variables name="monostable1" typeName="TP"></variables>
+		<variables name="test" typeName="BOOL">
+			<variableInit value="1"></variableInit>
+		</variables>
+		<variables name="Material_ok" typeName="BOOL">
+			<comment>Material value ok</comment>
+		</variables>
+		<variables name="CS_A" typeName="BOOL">
+			<comment>Internal bit for conveying screw</comment>
+		</variables>
+		<variables name="Forming" typeName="EBOOL">
+			<comment>Forming material in progress</comment>
+		</variables>
+		<variables name="Sec" typeName="EBOOL">
+			<comment>Variable with 1sec. timebase</comment>
+		</variables>
+		<variables name="fdbk_ET_conveyer" typeName="TIME"></variables>
+	</dataBlock>
+</FBDExchangeFile>

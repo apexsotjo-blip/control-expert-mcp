@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<LDExchangeFile>
+	<fileHeader company="Schneider Automation" product="Control Expert V14.0 - 190112" dateTime="date_and_time#2026-6-11-11:35:6" content="Ladder source file" DTDVersion="41"></fileHeader>
+	<contentHeader name="injection molding machine " version="0.0.000" dateTime="date_and_time#2018-12-5-16:37:24">
+		<comment>Information 
+This project is a OFFLINE project. That means the whole application is only for                                        use in SIMULATION mode
+There is also a Microsoft Word file, that contains the differences between PL7/Concept to Unity and more information for this application..
+Please read the "welcome file" at the process overview before starting this simulation.
+
+Developed by Stefan Probst
+07.05.2003</comment>
+	</contentHeader>
+	<program>
+		<identProgram name="Packaging" type="section" task="MAST"></identProgram>
+		<LDSource nbColumns="11">
+			<networkLD>
+				<typeLine>
+					<contact typeContact="PContact" contactVariableName="hb_five"></contact>
+					<shortCircuit>
+						<VLink></VLink>
+						<HLink nbCells="9"></HLink>
+					</shortCircuit>
+					<coil typeCoil="setCoil" coilVariableName="five_pices"></coil>
+				</typeLine>
+				<typeLine>
+					<emptyCell nbCells="10"></emptyCell>
+					<coil typeCoil="resetCoil" coilVariableName="ten_pices"></coil>
+				</typeLine>
+				<typeLine>
+					<emptyLine nbRows="1"></emptyLine>
+				</typeLine>
+				<typeLine>
+					<contact typeContact="PContact" contactVariableName="hb_ten"></contact>
+					<shortCircuit>
+						<VLink></VLink>
+						<HLink nbCells="9"></HLink>
+					</shortCircuit>
+					<coil typeCoil="setCoil" coilVariableName="ten_pices"></coil>
+				</typeLine>
+				<typeLine>
+					<emptyCell nbCells="10"></emptyCell>
+					<coil typeCoil="resetCoil" coilVariableName="five_pices"></coil>
+				</typeLine>
+				<typeLine>
+					<emptyLine nbRows="95"></emptyLine>
+				</typeLine>
+			</networkLD>
+		</LDSource>
+	</program>
+	<dataBlock>
+		<variables name="five_pices" typeName="BOOL">
+			<comment>Packaging 5 pices</comment>
+		</variables>
+		<variables name="hb_five" typeName="EBOOL">
+			<comment>Internal Bit for five pieces</comment>
+		</variables>
+		<variables name="ten_pices" typeName="BOOL">
+			<comment>Packaging 10 pices</comment>
+		</variables>
+		<variables name="hb_ten" typeName="EBOOL">
+			<comment>Internal Bit for ten pieces</comment>
+		</variables>
+	</dataBlock>
+</LDExchangeFile>

@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<FBExchangeFile>
+	<fileHeader company="Schneider Automation" product="Control Expert V14.0 - 190112" dateTime="date_and_time#2026-6-11-12:41:49" content="Function Block source file" DTDVersion="41"></fileHeader>
+	<contentHeader name="DR001 Dabouq Reservoir" version="0.0.170" dateTime="date_and_time#2019-12-10-5:20:9"></contentHeader>
+	<FBSource nameOfFBType="AINPUT" version="0.06" dateTime="dt#2020-03-14-17:47:37">
+		<comment>Analog Input</comment>
+		<attribute name="TypeCodeCheckSumString" value="F4A3"></attribute>
+		<attribute name="TypeSignatureCheckSumString" value="811C"></attribute>
+		<inputParameters>
+			<variables name="CHIN" typeName="INT">
+				<comment>Channel Input (raw)</comment>
+				<attribute name="PositionPin" value="1"></attribute>
+			</variables>
+			<variables name="CHFAILURE" typeName="BOOL">
+				<comment>Channel Input Failure</comment>
+				<attribute name="PositionPin" value="2"></attribute>
+			</variables>
+			<variables name="HIRAW" typeName="INT">
+				<comment>High Range (raw)</comment>
+				<attribute name="PositionPin" value="3"></attribute>
+			</variables>
+			<variables name="LORAW" typeName="INT">
+				<comment>Low Range (raw)</comment>
+				<attribute name="PositionPin" value="4"></attribute>
+			</variables>
+			<variables name="HIPV" typeName="REAL">
+				<comment>High Range (EU)</comment>
+				<attribute name="PositionPin" value="5"></attribute>
+			</variables>
+			<variables name="LOPV" typeName="REAL">
+				<comment>Low Range (EU)</comment>
+				<attribute name="PositionPin" value="6"></attribute>
+			</variables>
+			<variables name="FAILPV" typeName="REAL">
+				<comment>Value to consider (EU) for  fault of channel</comment>
+				<attribute name="PositionPin" value="7"></attribute>
+			</variables>
+			<variables name="CUTOFFPV" typeName="REAL">
+				<comment>Minimum reliable value of the measure (EU)</comment>
+				<attribute name="PositionPin" value="8"></attribute>
+			</variables>
+			<variables name="EXTPVEN" typeName="BOOL">
+				<comment>Enable measure (EU)</comment>
+				<attribute name="PositionPin" value="9"></attribute>
+			</variables>
+			<variables name="EXTPV" typeName="REAL">
+				<comment>External Signal of PV (EU)</comment>
+				<attribute name="PositionPin" value="10"></attribute>
+			</variables>
+		</inputParameters>
+		<inOutParameters>
+			<variables name="AINPUT_CFG" typeName="AINPUT_CFG_DDT">
+				<comment>Configuration</comment>
+				<attribute name="PositionPin" value="11"></attribute>
+			</variables>
+			<variables name="AINPUT_ST" typeName="AINPUT_ST_DDT">
+				<comment>Status</comment>
+				<attribute name="PositionPin" value="12"></attribute>
+				<instanceElementDesc name="STW">
+					<comment>Palabra de estado</comment>
+				</instanceElementDesc>
+				<instanceElementDesc name="CFGW">
+					<comment>Palabra de configuración</comment>
+				</instanceElementDesc>
+				<instanceElementDesc name="PV">
+					<comment>Valor Actual</comment>
+				</instanceElementDesc>
+			</variables>
+		</inOutParameters>
+		<outputParameters>
+			<variables name="PV" typeName="REAL">
+				<comment>Actual value</comment>
+				<attribute name="PositionPin" value="1"></attribute>
+			</variables>
+			<variables name="ER" typeName="BOOL">
+				<comment>Channel Error</comment>
+				<attribute name="PositionPin" value="2"></attribute>
+			</variables>
+		</outputParameters>
+		<publicLocalVariables>
+			<variables name="SC" typeName="AINPUT_SC_DDT">
+				<comment>Sequence Control</comment>
+				<instanceElementDesc name="PV">
+					<comment>Valor Actual</comment>
+				</instanceElementDesc>
+				<instanceElementDesc name="BADST">
+					<comment>Señal en fallo</comment>
+				</instanceElementDesc>
+			</variables>
+		</publicLocalVariables>
+		<FBProgram name="AINPUT">
+			<STSource>(* SGUAINPUT v1.0.0.1
+SCHNEIDER ELECTRIC ESPAÑA - DCI
+SOLUCIÓN GARANTIZADA UNITY - SGU
+
+Especificación:
+SGUAINPUT1.0-Módulo de control Analog Input (SGU)
+
+Control de cambios:
+12/01/07 Emisión de la versión 1.0.0
+23/04/07 Cambiada identificación a 1.0.0.1 (diseño 1.0, implem 0.1)
+*)
+
+IF EXTPVEN THEN		(* PV Externo *)
+	SC.BADST:=AINPUT_ST.STW.0:=FALSE;
+	IF AINPUT_ST.CFGW.0 THEN (* AINPUT_ST.CFGW.SIMMD *)
+		PV:=AINPUT_CFG.SIM;
+	ELSE
+		PV:=EXTPV;
+	END_IF;
+ELSE
+	(* Diagnosis *)
+	ER := SC.BADST := AINPUT_ST.STW.0 := CHFAILURE;
+	IF AINPUT_ST.CFGW.0 THEN (* AINPUT_ST.CFGW.SIMMD *)
+		PV:=AINPUT_CFG.SIM;
+	ELSE
+		(* PV *)
+		IF CHFAILURE THEN
+			PV:=FAILPV;	
+		ELSE 
+			IF CHIN&lt;=LORAW THEN
+				PV:=LOPV;
+			(*ELSIF CHIN&gt;=HIRAW THEN
+				PV:=HIPV;*)
+			ELSE
+				PV:=(HIPV-LOPV)/INT_TO_REAL(HIRAW-LORAW)*INT_TO_REAL(CHIN)+LOPV-
+				(HIPV-LOPV)/INT_TO_REAL(HIRAW-LORAW)*INT_TO_REAL(LORAW);
+				IF PV&lt;CUTOFFPV THEN PV:=LOPV; END_IF;
+			END_IF;
+		END_IF;
+	END_IF;
+
+	(* Ajustar PV al rango *)
+	IF PV&lt;LOPV THEN
+		PV:=LOPV;
+	(*ELSIF PV&gt;HIPV THEN
+		PV:=HIPV;*)
+	END_IF;	
+END_IF;
+
+(* AINPUT_ST.PV y AINPUT_SC.PV y SIMM*)
+AINPUT_CFG.SIM:=SC.PV:=AINPUT_ST.PV:=PV;
+</STSource>
+		</FBProgram>
+	</FBSource>
+</FBExchangeFile>

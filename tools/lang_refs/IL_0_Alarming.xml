@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<ILExchangeFile>
+	<fileHeader company="Schneider Automation" product="Control Expert V14.0 - 190112" dateTime="date_and_time#2026-6-11-11:35:6" content="IL source file" DTDVersion="41"></fileHeader>
+	<contentHeader name="injection molding machine " version="0.0.000" dateTime="date_and_time#2018-12-5-16:37:24">
+		<comment>Information 
+This project is a OFFLINE project. That means the whole application is only for                                        use in SIMULATION mode
+There is also a Microsoft Word file, that contains the differences between PL7/Concept to Unity and more information for this application..
+Please read the "welcome file" at the process overview before starting this simulation.
+
+Developed by Stefan Probst
+07.05.2003</comment>
+	</contentHeader>
+	<program>
+		<identProgram name="Alarming" type="section" task="MAST"></identProgram>
+		<ILSource>(* Alert for temperature to low *)
+
+CAL Temperature_monitoring_1 (
+  COND1 := 1,
+  COND0 := Temp_fault_1,
+  ERROR =&gt; Alert_1
+  )
+
+(* Alert for temperature to high *)
+
+CAL Temperature_monitoring_2 (
+  COND1 := 1,
+  COND0 := Temp_fault_2,
+  ERROR =&gt; Alert_2
+  )
+
+(* Warning for feeder empty *)
+
+CAL Feeder_monitoring (
+  COND1 := 1,
+  COND0 := new_material_demand,
+  ERROR =&gt; Alert_3
+  )
+</ILSource>
+	</program>
+	<dataBlock>
+		<variables name="Feeder_monitoring" typeName="ALRM_DIA">
+			<comment>No material in feeder/refilling......</comment>
+		</variables>
+		<variables name="Temperature_monitoring_1" typeName="ALRM_DIA">
+			<comment>Temp. low =&gt; Increase Temp. Setpoint</comment>
+			<instanceElementDesc name="OP_CTRL">
+				<value>True</value>
+			</instanceElementDesc>
+		</variables>
+		<variables name="Temp_fault_2" typeName="EBOOL">
+			<comment>Fault for temperature to high</comment>
+		</variables>
+		<variables name="new_material_demand" typeName="EBOOL">
+			<comment>New material for feeder demandet</comment>
+		</variables>
+		<variables name="Alert_1" typeName="EBOOL">
+			<comment>Alert for temperature to low</comment>
+		</variables>
+		<variables name="Temp_fault_1" typeName="EBOOL">
+			<comment>Fault for temperature to low</comment>
+		</variables>
+		<variables name="Temperature_monitoring_2" typeName="ALRM_DIA">
+			<comment>Temp. high =&gt; Decrease Temp. Setpoit</comment>
+			<instanceElementDesc name="OP_CTRL">
+				<value>True</value>
+			</instanceElementDesc>
+		</variables>
+		<variables name="Alert_2" typeName="EBOOL">
+			<comment>Alert for temperature to high</comment>
+		</variables>
+		<variables name="Alert_3" typeName="EBOOL">
+			<comment>Alert for feeder empty</comment>
+		</variables>
+	</dataBlock>
+</ILExchangeFile>

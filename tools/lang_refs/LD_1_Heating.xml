@@ -1,0 +1,225 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<LDExchangeFile>
+	<fileHeader company="Schneider Automation" product="Control Expert V14.0 - 190112" dateTime="date_and_time#2026-6-11-11:35:6" content="Ladder source file" DTDVersion="41"></fileHeader>
+	<contentHeader name="injection molding machine " version="0.0.000" dateTime="date_and_time#2018-12-5-16:37:24">
+		<comment>Information 
+This project is a OFFLINE project. That means the whole application is only for                                        use in SIMULATION mode
+There is also a Microsoft Word file, that contains the differences between PL7/Concept to Unity and more information for this application..
+Please read the "welcome file" at the process overview before starting this simulation.
+
+Developed by Stefan Probst
+07.05.2003</comment>
+	</contentHeader>
+	<program>
+		<identProgram name="Heating" type="section" task="MAST"></identProgram>
+		<LDSource nbColumns="11">
+			<networkLD>
+				<typeLine>
+					<emptyLine nbRows="3"></emptyLine>
+				</typeLine>
+				<typeLine>
+					<HLink nbCells="7"></HLink>
+					<operateBlock width="4">
+						<statement>Setpoint_temp:=int_to_real (cv_setpoint);</statement>
+					</operateBlock>
+				</typeLine>
+				<typeLine>
+					<emptyCell nbCells="3"></emptyCell>
+					<FFBBlock instanceName="Heating_control" typeName="Heating" additionnalPinNumber="0" enEnO="true" width="16" height="8">
+						<objPosition posX="3" posY="4"></objPosition>
+						<descriptionFFB execAfter="">
+							<inputVariable invertedPin="false" formalParameter="EN"></inputVariable>
+							<inputVariable invertedPin="false" formalParameter="Setpoint_temp" effectiveParameter="Setpoint_temp"></inputVariable>
+							<inputVariable invertedPin="false" formalParameter="Measured_temp" effectiveParameter="Measured_temp"></inputVariable>
+							<inputVariable invertedPin="false" formalParameter="start"></inputVariable>
+							<outputVariable invertedPin="false" formalParameter="ENO"></outputVariable>
+							<outputVariable invertedPin="false" formalParameter="plus_10_percent"></outputVariable>
+							<outputVariable invertedPin="false" formalParameter="plus_5_percent"></outputVariable>
+							<outputVariable invertedPin="false" formalParameter="plus_1_percent"></outputVariable>
+							<outputVariable invertedPin="false" formalParameter="minus_1_percent"></outputVariable>
+							<outputVariable invertedPin="false" formalParameter="minus_5_percent"></outputVariable>
+							<outputVariable invertedPin="false" formalParameter="minus_10_percent"></outputVariable>
+						</descriptionFFB>
+						<comment>Heating Control</comment>
+					</FFBBlock>
+					<emptyCell nbCells="6"></emptyCell>
+				</typeLine>
+				<typeLine>
+					<emptyLine nbRows="1"></emptyLine>
+				</typeLine>
+				<typeLine>
+					<emptyCell nbCells="5"></emptyCell>
+					<HLink nbCells="5"></HLink>
+					<coil typeCoil="coil" coilVariableName="plus_10_percent"></coil>
+				</typeLine>
+				<typeLine>
+					<emptyCell nbCells="5"></emptyCell>
+					<HLink nbCells="5"></HLink>
+					<coil typeCoil="coil" coilVariableName="plus_5_percent"></coil>
+				</typeLine>
+				<typeLine>
+					<emptyCell nbCells="5"></emptyCell>
+					<HLink nbCells="5"></HLink>
+					<coil typeCoil="coil" coilVariableName="plus_1_percent"></coil>
+				</typeLine>
+				<typeLine>
+					<emptyCell nbCells="5"></emptyCell>
+					<HLink nbCells="5"></HLink>
+					<coil typeCoil="coil" coilVariableName="minus_1_percent"></coil>
+				</typeLine>
+				<typeLine>
+					<contact typeContact="openContact" contactVariableName="Start_process"></contact>
+					<HLink nbCells="2"></HLink>
+					<emptyCell nbCells="2"></emptyCell>
+					<HLink nbCells="5"></HLink>
+					<coil typeCoil="coil" coilVariableName="minus_5_percent"></coil>
+				</typeLine>
+				<typeLine>
+					<emptyCell nbCells="5"></emptyCell>
+					<HLink nbCells="5"></HLink>
+					<coil typeCoil="coil" coilVariableName="minus_10_percent"></coil>
+				</typeLine>
+				<typeLine>
+					<emptyLine nbRows="1"></emptyLine>
+				</typeLine>
+				<typeLine>
+					<contact typeContact="openContact" contactVariableName="plus_1_percent"></contact>
+					<contact typeContact="PContact" contactVariableName="Sec"></contact>
+					<shortCircuit>
+						<VLink></VLink>
+						<HLink nbCells="1"></HLink>
+					</shortCircuit>
+					<HLink nbCells="4"></HLink>
+					<operateBlock width="4">
+						<statement>inc (Measured_temp);</statement>
+					</operateBlock>
+				</typeLine>
+				<typeLine>
+					<contact typeContact="openContact" contactVariableName="plus_5_percent"></contact>
+					<contact typeContact="PContact" contactVariableName="Ms_100"></contact>
+					<shortCircuit>
+						<VLink></VLink>
+						<HLink nbCells="1"></HLink>
+					</shortCircuit>
+					<emptyCell nbCells="8"></emptyCell>
+				</typeLine>
+				<typeLine>
+					<contact typeContact="openContact" contactVariableName="plus_10_percent"></contact>
+					<contact typeContact="PContact" contactVariableName="Ms_10"></contact>
+					<HLink nbCells="1"></HLink>
+					<emptyCell nbCells="8"></emptyCell>
+				</typeLine>
+				<typeLine>
+					<emptyLine nbRows="1"></emptyLine>
+				</typeLine>
+				<typeLine>
+					<contact typeContact="openContact" contactVariableName="minus_1_percent"></contact>
+					<contact typeContact="PContact" contactVariableName="Sec"></contact>
+					<shortCircuit>
+						<VLink></VLink>
+						<HLink nbCells="1"></HLink>
+					</shortCircuit>
+					<HLink nbCells="4"></HLink>
+					<operateBlock width="4">
+						<statement>dec (Measured_temp);</statement>
+					</operateBlock>
+				</typeLine>
+				<typeLine>
+					<contact typeContact="openContact" contactVariableName="minus_5_percent"></contact>
+					<contact typeContact="PContact" contactVariableName="Ms_100"></contact>
+					<shortCircuit>
+						<VLink></VLink>
+						<HLink nbCells="1"></HLink>
+					</shortCircuit>
+					<emptyCell nbCells="8"></emptyCell>
+				</typeLine>
+				<typeLine>
+					<contact typeContact="openContact" contactVariableName="minus_10_percent"></contact>
+					<contact typeContact="PContact" contactVariableName="Ms_10"></contact>
+					<HLink nbCells="1"></HLink>
+					<emptyCell nbCells="8"></emptyCell>
+				</typeLine>
+				<typeLine>
+					<emptyLine nbRows="1"></emptyLine>
+				</typeLine>
+				<typeLine>
+					<contact typeContact="openContact" contactVariableName="start_process"></contact>
+					<shortCircuit>
+						<VLink></VLink>
+						<HLink nbCells="1"></HLink>
+					</shortCircuit>
+					<compareBlock width="2">
+						<expression>Measured_temp&lt;=200</expression>
+					</compareBlock>
+					<HLink nbCells="6"></HLink>
+					<coil typeCoil="coil" coilVariableName="Temp_fault_1"></coil>
+				</typeLine>
+				<typeLine>
+					<emptyCell nbCells="2"></emptyCell>
+					<compareBlock width="2">
+						<expression>Measured_temp&gt;=400</expression>
+					</compareBlock>
+					<HLink nbCells="6"></HLink>
+					<coil typeCoil="coil" coilVariableName="Temp_fault_2"></coil>
+				</typeLine>
+				<typeLine>
+					<emptyLine nbRows="77"></emptyLine>
+				</typeLine>
+				<textBox width="3" height="2">starting process heating. simulation of process loop for heating with DFB<objPosition posX="4" posY="1"></objPosition>
+				</textBox>
+				<textBox width="2" height="2">comparing Temperature for alarm displaying<objPosition posX="4" posY="20"></objPosition>
+				</textBox>
+			</networkLD>
+		</LDSource>
+	</program>
+	<dataBlock>
+		<variables name="Start_process" typeName="EBOOL">
+			<comment>Internal variable for process start</comment>
+		</variables>
+		<variables name="Measured_temp" typeName="INT">
+			<comment>Measurement of temperature</comment>
+		</variables>
+		<variables name="plus_1_percent" typeName="BOOL">
+			<comment>Heating input power +1%</comment>
+		</variables>
+		<variables name="plus_10_percent" typeName="BOOL">
+			<comment>Heating input power +10%</comment>
+		</variables>
+		<variables name="minus_10_percent" typeName="BOOL">
+			<comment>Heating input power -10%</comment>
+		</variables>
+		<variables name="Temp_fault_2" typeName="EBOOL">
+			<comment>Fault for temperature to high</comment>
+		</variables>
+		<variables name="minus_1_percent" typeName="BOOL">
+			<comment>Heating input power -1%</comment>
+		</variables>
+		<variables name="Temp_fault_1" typeName="EBOOL">
+			<comment>Fault for temperature to low</comment>
+		</variables>
+		<variables name="cv_setpoint" typeName="INT">
+			<comment>Internal variable for temperature setpoint</comment>
+		</variables>
+		<variables name="Sec" typeName="EBOOL">
+			<comment>Variable with 1sec. timebase</comment>
+		</variables>
+		<variables name="minus_5_percent" typeName="BOOL">
+			<comment>Heating input power -5%</comment>
+		</variables>
+		<variables name="Ms_10" typeName="EBOOL">
+			<comment>Variable with 10ms timbase</comment>
+		</variables>
+		<variables name="plus_5_percent" typeName="BOOL">
+			<comment>Heating input power +5%</comment>
+		</variables>
+		<variables name="Setpoint_temp" typeName="REAL">
+			<comment>Setpoint for temperature</comment>
+		</variables>
+		<variables name="Ms_100" typeName="EBOOL">
+			<comment>Variable with 100ms timebase</comment>
+		</variables>
+		<variables name="Heating_control" typeName="Heating">
+			<comment>Heating control</comment>
+		</variables>
+	</dataBlock>
+</LDExchangeFile>

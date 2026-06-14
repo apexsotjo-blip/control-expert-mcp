@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<LDExchangeFile>
+	<fileHeader company="Schneider Automation" product="Control Expert V14.0 - 190112" dateTime="date_and_time#2026-6-11-11:35:5" content="Ladder source file" DTDVersion="41"></fileHeader>
+	<contentHeader name="injection molding machine " version="0.0.000" dateTime="date_and_time#2018-12-5-16:37:24">
+		<comment>Information 
+This project is a OFFLINE project. That means the whole application is only for                                        use in SIMULATION mode
+There is also a Microsoft Word file, that contains the differences between PL7/Concept to Unity and more information for this application..
+Please read the "welcome file" at the process overview before starting this simulation.
+
+Developed by Stefan Probst
+07.05.2003</comment>
+	</contentHeader>
+	<program>
+		<identProgram name="Start_process" type="section" task="MAST"></identProgram>
+		<LDSource nbColumns="11">
+			<networkLD>
+				<typeLine>
+					<emptyLine nbRows="1"></emptyLine>
+				</typeLine>
+				<typeLine>
+					<contact typeContact="openContact" contactVariableName="Start"></contact>
+					<shortCircuit>
+						<VLink></VLink>
+						<HLink nbCells="1"></HLink>
+					</shortCircuit>
+					<contact typeContact="closedContact" contactVariableName="Stop"></contact>
+					<shortCircuit>
+						<VLink></VLink>
+						<HLink nbCells="5"></HLink>
+					</shortCircuit>
+					<HLink nbCells="1"></HLink>
+					<coil typeCoil="coil" coilVariableName="Start_process"></coil>
+					<HLink nbCells="1"></HLink>
+				</typeLine>
+				<typeLine>
+					<contact typeContact="openContact" contactVariableName="Start_process"></contact>
+					<HLink nbCells="1"></HLink>
+					<emptyCell nbCells="6"></emptyCell>
+					<HLink nbCells="1"></HLink>
+					<coil typeCoil="coil" coilVariableName="Machine_running"></coil>
+					<HLink nbCells="1"></HLink>
+				</typeLine>
+				<typeLine>
+					<emptyLine nbRows="2"></emptyLine>
+				</typeLine>
+				<typeLine>
+					<contact typeContact="PContact" contactVariableName="Start_process"></contact>
+					<shortCircuit>
+						<VLink></VLink>
+						<HLink nbCells="6"></HLink>
+					</shortCircuit>
+					<operateBlock width="4">
+						<statement>cv_Material_A:=1000;</statement>
+					</operateBlock>
+				</typeLine>
+				<typeLine>
+					<emptyCell nbCells="6"></emptyCell>
+					<VLink></VLink>
+					<operateBlock width="4">
+						<statement>cv_Material_B:=1000;</statement>
+					</operateBlock>
+				</typeLine>
+				<typeLine>
+					<emptyCell nbCells="6"></emptyCell>
+					<VLink></VLink>
+					<operateBlock width="4">
+						<statement>material_a_value:=50;</statement>
+					</operateBlock>
+				</typeLine>
+				<typeLine>
+					<emptyCell nbCells="7"></emptyCell>
+					<operateBlock width="4">
+						<statement>material_b_value:=20;</statement>
+					</operateBlock>
+				</typeLine>
+				<typeLine>
+					<emptyLine nbRows="91"></emptyLine>
+				</typeLine>
+				<textBox width="3" height="2">setting Material value to 1000 setting weighing value A to 50, setting material value B to 20<objPosition posX="3" posY="3"></objPosition>
+				</textBox>
+				<textBox width="3" height="1">Start Process<objPosition posX="3" posY="0"></objPosition>
+				</textBox>
+			</networkLD>
+		</LDSource>
+	</program>
+	<dataBlock>
+		<variables name="Stop" typeName="BOOL">
+			<comment>Stop process</comment>
+		</variables>
+		<variables name="Start_process" typeName="EBOOL">
+			<comment>Internal variable for process start</comment>
+		</variables>
+		<variables name="cv_Material_B" typeName="INT">
+			<comment>Internal variable for Material B</comment>
+		</variables>
+		<variables name="material_b_value" typeName="INT">
+			<comment>Starting value for weighing material B</comment>
+			<variableInit value="20"></variableInit>
+		</variables>
+		<variables name="cv_Material_A" typeName="INT">
+			<comment>Internal variable for Material A</comment>
+		</variables>
+		<variables name="Start" typeName="BOOL">
+			<comment>Start process</comment>
+		</variables>
+		<variables name="material_a_value" typeName="INT">
+			<comment>Value material A</comment>
+			<variableInit value="50"></variableInit>
+		</variables>
+		<variables name="Machine_running" typeName="EBOOL" topologicalAddress="%Q0.3.3">
+			<comment>Output for Machine running</comment>
+		</variables>
+	</dataBlock>
+</LDExchangeFile>
