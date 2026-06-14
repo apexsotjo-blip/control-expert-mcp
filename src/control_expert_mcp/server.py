@@ -13,6 +13,8 @@ import sys
 from mcp.server.fastmcp import FastMCP
 
 from .bridge import ControlExpertBridge
+from .modbus import ModbusClient, ModbusError, parse_address
+from .prompts import register_prompts
 
 logging.basicConfig(
     level=logging.INFO,
@@ -32,13 +34,57 @@ mcp = FastMCP(
         "write_st_logic (plain IEC text, no XML). For LD/FBD/SFC, FIRST call "
         "get_language_reference(language) and mirror its validated example via "
         "import_xml(kind='section'). SFC is the right choice for stepwise "
-        "sequences (steps + transitions + ST actions)."
+        "sequences (steps + transitions + ST actions).\n\n"
+        "Live testing: online tools (plc_*, modbus_*) need CE_MCP_ENABLE_ONLINE=1. "
+        "To run a project on the simulator, see the commission_simulator prompt (a "
+        "fresh sim needs a one-time manual transfer from the CE GUI to seed the CPU "
+        "family — 'Family check failed' otherwise). Reading/writing LIVE values is "
+        "done over Modbus TCP (modbus_connect/read_tags/write_tags), not the COM API; "
+        "only LOCATED %M/%MW tags are reachable, so mirror unlocated DFB internals to "
+        "%MW first (see the test_logic_live prompt). Invoke a guided prompt instead of "
+        "rediscovering these flows."
     ),
 )
 
 ce = ControlExpertBridge()
+mb = ModbusClient()
+register_prompts(mcp)
 
 ONLINE_ENABLED = os.environ.get("CE_MCP_ENABLE_ONLINE", "").strip() in ("1", "true", "yes")
+
+
+def _default_type_for(address: str) -> str:
+    """Default IEC type when a raw %-address is given without one."""
+    try:
+        family, _, _ = parse_address(address)
+    except ModbusError:
+        return "INT"
+    return "BOOL" if family in ("M", "MX") else "INT"
+
+
+def _build_tag_plan(specs: list[str]) -> list[list]:
+    """Turn tag specs into [label, address, type] rows. Each spec is a global
+    variable name (address+type resolved from the project) or an explicit
+    address with optional ':TYPE' (e.g. '%MW2:REAL', '%MW70:UDINT', '%M3')."""
+    plan: list[list] = []
+    names: list[str] = []
+    for spec in specs:
+        spec = spec.strip()
+        if not spec:
+            continue
+        if spec.startswith("%"):
+            addr, _, typ = spec.partition(":")
+            plan.append([spec, addr.strip(), typ.strip() or _default_type_for(addr.strip())])
+        else:
+            names.append(spec)
+            plan.append([spec, None, None])
+    if names:
+        resolved = ce.resolve_addresses(names)
+        for row in plan:
+            if row[1] is None:
+                rec = resolved.get(row[0], {})
+                row[1], row[2] = rec.get("address", ""), rec.get("type", "")
+    return plan
 
 
 # --------------------------------------------------------------- session
@@ -674,11 +720,28 @@ def set_network_ip(name: str, ip_address: str, subnet_mask: str, gateway: str) -
 
 
 @mcp.tool()
-def show_ui(state: str = "show_normal") -> dict:
+def show_ui(state: str = "show_normal", mode: str = "read_only", command_line: str = "") -> dict:
     """Make the Control Expert window of this automation session visible so a
-    human can watch or take over. state: show_normal, show_maximized,
-    minimize, restore."""
-    return ce.show_ui(state)
+    human can watch the AI work or take over. state: show_normal,
+    show_maximized, minimize, restore.
+
+    mode: 'read_only' (default — the GUI follows along while this client keeps
+    the write token; required for opening editors) or 'read_write' (hand the
+    GUI full control; only works if this client does not hold write access).
+    command_line: optional Control Expert command line to open specific editors
+    on startup."""
+    return ce.show_ui(state, mode, command_line)
+
+
+@mcp.tool()
+def open_animation_table(name: str, state: str = "show_normal") -> dict:
+    """Open an existing animation table's editor inside the live Control Expert
+    window, so a human watches values update in real time while the AI drives a
+    test. Typical live-test flow: create_animation_table -> start_simulator ->
+    plc_connect -> plc_transfer -> plc_command('run') -> open_animation_table.
+    The GUI opens read-only (this client keeps write); the table animates live
+    once connected to the simulator/PLC."""
+    return ce.open_animation_table(name, state)
 
 
 # ----------------------------------------------------------------- online
@@ -719,6 +782,80 @@ if ONLINE_ENABLED:
         """Send a run/stop/init command to the connected PLC. DANGEROUS:
         starting or stopping a live controller affects the physical process."""
         return ce.plc_command(command)
+
+    # ------------------------------------- live values over Modbus TCP
+
+    @mcp.tool()
+    def modbus_connect(host: str, port: int = 502, unit: int = 1, word_order: str = "low_first") -> dict:
+        """Open a Modbus TCP link to a Modicon CPU's embedded server for live
+        read/write of LOCATED tags (%M / %MW) while the PLC runs — the channel
+        SCADA uses, and the only way this server reads/writes live values (the
+        UDE/COM API cannot).
+
+        Only located tags work: unlocated DFB internals (e.g. Pump1.Running)
+        must be mirrored to a %MW/%M address in the program first. word_order is
+        for 32-bit REAL/DINT: 'low_first' (Schneider default) or 'high_first'.
+        Works against the SIMULATOR (host='127.0.0.1', the endpoint a Vijeo
+        Designer I/O scanner reaches) as well as a real CPU IP; port 502."""
+        return mb.connect(host, port, unit, word_order)
+
+    @mcp.tool()
+    def modbus_disconnect() -> dict:
+        """Close the Modbus TCP connection."""
+        return mb.disconnect()
+
+    @mcp.tool()
+    def modbus_status() -> dict:
+        """Report the Modbus TCP connection state and decode settings."""
+        return mb.status()
+
+    @mcp.tool()
+    def read_tags(tags: str) -> dict:
+        """Read live values of located tags over Modbus TCP (modbus_connect
+        first). tags is a comma-separated list; each item is a global variable
+        name (its %address and IEC type are looked up from the project) or an
+        explicit address '%MW70' / '%M3' / '%MW10.2', optionally typed
+        '%MW2:REAL' or '%MW70:UDINT' (default INT for %MW, BOOL for %M).
+        Returns {values:{tag:value}} and any per-tag errors."""
+        plan = _build_tag_plan(tags.split(","))
+        values, errors = {}, {}
+        for label, addr, typ in plan:
+            if not addr:
+                errors[label] = "no located %M/%MW address (unknown name or unlocated tag)"
+                continue
+            try:
+                values[label] = mb.read_one(addr, typ)
+            except ModbusError as exc:
+                errors[label] = str(exc)
+        out: dict = {"values": values}
+        if errors:
+            out["errors"] = errors
+        return out
+
+    @mcp.tool()
+    def write_tags(values: dict) -> dict:
+        """Write live values to located tags over Modbus TCP (modbus_connect
+        first). DANGEROUS — changes a running controller's process.
+
+        values maps each tag (a global variable name, or an address like
+        '%MW86' / '%M0' / '%MW2:REAL') to the value to write. Booleans go to %M
+        coils or %MWi.j bits; numbers to %MW (INT, 1 word) or two %MW words
+        (REAL/DINT/UDINT). Returns {written:{tag:value}} and any per-tag errors."""
+        plan = _build_tag_plan(list(values.keys()))
+        written, errors = {}, {}
+        for label, addr, typ in plan:
+            if not addr:
+                errors[label] = "no located %M/%MW address (unknown name or unlocated tag)"
+                continue
+            try:
+                mb.write_one(addr, typ, values[label])
+                written[label] = values[label]
+            except ModbusError as exc:
+                errors[label] = str(exc)
+        out: dict = {"written": written}
+        if errors:
+            out["errors"] = errors
+        return out
 
 
 def main() -> None:

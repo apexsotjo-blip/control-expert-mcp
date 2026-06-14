@@ -574,6 +574,37 @@ class ControlExpertBridge:
                 return var
         raise CEError(f"Variable '{name}' not found.")
 
+    def resolve_addresses(self, names: list[str]) -> dict:
+        return self._run(self._do_resolve_addresses, names)
+
+    def _do_resolve_addresses(self, names: list[str]) -> dict:
+        """Map global variable names to their topological address + IEC type
+        (one pass over the Variables collection). Used by the Modbus tools to
+        turn a tag name into a located %M/%MW address. Unresolved names get an
+        empty record so the caller can report them."""
+        proj = self._project(write=False)
+        wanted = {n.lower(): n for n in names}
+        out: dict[str, dict] = {}
+        for var in _iter_collection(proj.Variables):
+            key = str(var.Name).lower()
+            if key not in wanted:
+                continue
+            entry: dict[str, str] = {"name": str(var.Name)}
+            try:
+                entry["address"] = str(var.TopologicalAddress or "")
+            except Exception:
+                entry["address"] = ""
+            try:
+                entry["type"] = str(var.TypeName)
+            except Exception:
+                entry["type"] = ""
+            out[wanted[key]] = entry
+            if len(out) == len(wanted):
+                break
+        for orig in wanted.values():
+            out.setdefault(orig, {"name": orig, "address": "", "type": ""})
+        return out
+
     def create_variable(
         self,
         name: str,
@@ -1034,23 +1065,68 @@ class ControlExpertBridge:
 
     # ------------------------------------------------------------ public: UI
 
-    def show_ui(self, state: str) -> dict:
-        return self._run(self._do_show_ui, state)
+    def show_ui(self, state: str, mode: str = "read_only", command_line: str = "") -> dict:
+        return self._run(self._do_show_ui, state, mode, command_line)
 
-    def _do_show_ui(self, state: str) -> dict:
+    def _do_show_ui(self, state: str, mode: str, command_line: str) -> dict:
         app = self._ensure_app()
         code = C.SHOW_STATES.get(state, C.SHOW_STATES["show_normal"])
+        # DisplayStart fails in read-write when this automation client already
+        # holds the write token (it almost always does). Read-only is also the
+        # only mode in which <object>.DisplayEditor works — so it is the right
+        # default for "let a human watch while the client drives".
+        hmi = C.HMI_READ_WRITE if mode == "read_write" else C.HMI_READ_ONLY
         try:
-            app.DisplayStart(C.HMI_READ_WRITE, "")
+            app.DisplayStart(hmi, command_line or "")
         except Exception:
             pass
         try:
             app.SetDisplayPosition(0, 0, 1280, 900, code)
-            return {"visible": bool(int(app.IsVisible))}
+            return {"visible": bool(int(app.IsVisible)), "mode": "read_write" if hmi else "read_only"}
         except Exception as exc:
             raise CEError(
                 f"Could not show the Control Expert window: {_format_com_error(exc)}"
             ) from exc
+
+    def open_animation_table(self, name: str, state: str = "show_normal") -> dict:
+        return self._run(self._do_open_anim_table_editor, name, state)
+
+    def _do_open_anim_table_editor(self, name: str, state: str) -> dict:
+        """Open an animation table's editor inside the live Control Expert
+        window. Connect to the simulator/PLC first (plc_connect) and the table
+        then animates live values in the GUI. Per the UDE architecture doc,
+        DisplayEditor requires the GUI started in READ-ONLY mode while a
+        software client holds the write token."""
+        app = self._ensure_app()
+        table = self._find_anim_table(self._anim_tables(write=False), name)
+        if table is None:
+            raise CEError(
+                f"Animation table '{name}' not found — create it with "
+                "create_animation_table first."
+            )
+        try:
+            app.DisplayStart(C.HMI_READ_ONLY, "")
+        except Exception:
+            pass
+        try:
+            self._get_prop(table, "DisplayEditor")
+        except Exception as exc:
+            raise CEError(
+                f"Could not open the animation table editor: {_format_com_error(exc)}. "
+                "The GUI must be in read-only mode (it is opened that way here)."
+            ) from exc
+        code = C.SHOW_STATES.get(state, C.SHOW_STATES["show_normal"])
+        try:
+            app.SetDisplayPosition(0, 0, 1280, 900, code)
+        except Exception:
+            pass
+        visible = False
+        try:
+            visible = bool(int(app.IsVisible))
+        except Exception:
+            pass
+        return {"opened_editor": name, "visible": visible,
+                "note": "Connect (plc_connect) and the table animates live in the CE window."}
 
     # -------------------------------------------------------- public: online
 
