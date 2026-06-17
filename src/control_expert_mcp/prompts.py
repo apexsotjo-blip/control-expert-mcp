@@ -77,9 +77,12 @@ def register_prompts(mcp) -> None:
         lang = (language or "ST").upper()
         common = (
             "Loop until the build is clean:\n"
-            "  a. write/import the section\n"
-            "  b. build_project\n"
-            "  c. read the 'output' field — it lists per-section errors; fix and repeat "
+            "  a. (graphical/XML) call validate_xml FIRST — it checks the document against "
+            "the installed CE schema and flags unknown elements / bad attribute values "
+            "instantly, before the slower build.\n"
+            "  b. import_xml the section (or write_st_logic for ST).\n"
+            "  c. build_project; read the 'output' field — it lists per-section errors "
+            "(pin geometry, type rules — things the schema can't catch); fix and repeat "
             "until 'Process succeeded'.\n"
             "Declare referenced variables first (create_variable) or include a <dataBlock>.\n"
         )
@@ -115,6 +118,28 @@ def register_prompts(mcp) -> None:
             "5. build_project until 'built_ok', then save_project('C:/path/MyApp.stu').\n\n"
             "Tip: prefer a standalone CPU for simulator work; HSBY needs a manual first transfer "
             "(see commission_simulator)."
+        )
+
+    @mcp.prompt()
+    def fb_in_ladder(block_type: str = "TON") -> str:
+        """Place a function block inside a Ladder section (which can't be hand-authored)."""
+        return (
+            f"Goal: use a function block ({block_type}) inside LADDER logic.\n\n"
+            "An FFB in LD can't be hand-authored as XML (CE's GUI owns the pin layout), but "
+            "the server generates it for you. Routes, best first:\n\n"
+            f"ROUTE A — place_fb_in_ladder (project DFBs like {block_type}, NO template):\n"
+            "  place_fb_in_ladder(section, fb_type, instance_name, bindings={'Pin':'Var', ...},\n"
+            "    rung_input=<bool input the rung drives, optional>, rung_contact=<bool var>) —\n"
+            "  reads the DFB interface and generates correct geometry automatically; then\n"
+            "  build_project. Call once per block (each makes its own section). This is the\n"
+            "  easy path for your DFBs (FC_Valve, FC_VSD, Motor, ...).\n"
+            "ROUTE B — elementary EFBs (TON/CTU/…): author them in FBD (author_logic, "
+            "language='FBD'), or make a GUI template once and clone with use_fb_in_ladder.\n"
+            "ROUTE C — template clone: GUI-author a block-in-LD section once, then "
+            "use_fb_in_ladder(template_section, new_section, instance_name, bindings).\n\n"
+            "Everything else in Ladder (contacts incl. P/N edges, all coil types, jump/label, "
+            "compareBlock/operateBlock, parallel branches) IS hand-authorable — see "
+            "get_language_reference('LD')."
         )
 
     @mcp.prompt()

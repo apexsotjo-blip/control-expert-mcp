@@ -92,6 +92,9 @@ claude mcp add control-expert -- C:\path\to\control-expert-mcp\.venv\Scripts\pyt
 | `read_section` | Section logic as Control Expert XML |
 | `write_st_logic` | **Write ST logic as plain IEC text** (no XML) — creates or replaces a section, with inline variable declarations |
 | `get_language_reference` | Authoring guide + validated example for ST/LD/FBD/SFC/IL — the exchange-XML structure rules an AI client needs to write graphical logic (FBD pin-geometry rule, LD line/cell model, SFC chart layout) |
+| `validate_xml` | **Pre-validate** candidate exchange-XML against the installed `SrcXmlSchema` XSDs before import/build — instant structural errors with the legal value sets |
+| `place_fb_in_ladder` | **Drop any project DFB into Ladder, no template** — reads the DFB interface and generates the correct (CE-owned) pin geometry automatically, then bind pins |
+| `use_fb_in_ladder` | Clone a GUI-authored block-in-LD template and rebind instance + variables (fallback for elementary EFBs / exact GUI geometry) |
 | `create_section` / `delete_section` | Section management (ST/LD/FBD/SFC/IL) |
 | `create_task` | Add MAST/FAST/AUX/SAFE task |
 | `import_xml` | **The main write path** — import section logic, variables, DFB/DDT types, configuration, or whole-project exchange files (inline XML or file) |
@@ -213,7 +216,7 @@ Write a prompt for anything a client **cannot guess from the tool description al
 - The **write-access token** (`app.Project(1)`) is acquired once per session and cached; failed-call tracebacks are stripped so they can't pin COM references and deadlock `ProjectClose`.
 - `Project` is a parameterized COM property — it is invoked with explicit `DISPATCH_PROPERTYGET` flags because pywin32 dynamic dispatch can't call it.
 - Import temp files get the **extension matching the XML root element** (`STExchangeFile` → `.xst`, `VariablesExchangeFile` → `.xsy`, ...) because Control Expert picks the parser from the extension.
-- Enum constants (languages, export options, PLC commands...) were extracted from `PServer.tlb` — see [src/control_expert_mcp/constants.py](src/control_expert_mcp/constants.py) and [tools/dump_tlb_enums.py](tools/dump_tlb_enums.py).
+- Enum constants (languages, export options, PLC commands...) were extracted from `PServer.tlb` — see [src/control_expert_mcp/constants.py](src/control_expert_mcp/constants.py).
 
 ## Disclaimer
 
