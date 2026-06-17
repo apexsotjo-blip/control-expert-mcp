@@ -74,6 +74,15 @@ def _format_com_error(exc: Exception) -> str:
     return str(exc)
 
 
+def _is_build_changes_unavailable(exc: Exception) -> bool:
+    """True for the 'Build changes function not available' failure that
+    proj.Build() raises when there is nothing built yet to do an incremental
+    build against — the cue to fall back to a full BuildAll(). It surfaces as
+    HRESULT 0x80020009 (DISP_E_EXCEPTION), but that code is generic, so we also
+    require the descriptive text to avoid masking a genuine build failure."""
+    return "build changes" in _format_com_error(exc).lower()
+
+
 def _read_text_file(path: str) -> str:
     with open(path, "rb") as f:
         data = f.read()
@@ -301,10 +310,10 @@ class ControlExpertBridge:
         proj = self._project(write=False)
         return {"opened": path, "project": self._project_info(proj)}
 
-    def new_project(self, cpu_part_number: str, cpu_version: str, project_name: str) -> dict:
-        return self._run(self._do_new_project, cpu_part_number, cpu_version, project_name)
+    def new_project(self, cpu_part_number: str, cpu_version: str) -> dict:
+        return self._run(self._do_new_project, cpu_part_number, cpu_version)
 
-    def _do_new_project(self, cpu_part_number: str, cpu_version: str, project_name: str) -> dict:
+    def _do_new_project(self, cpu_part_number: str, cpu_version: str) -> dict:
         if not cpu_version:
             raise CEError(
                 "cpu_version is required and must match the firmware version offered by "
@@ -314,7 +323,9 @@ class ControlExpertBridge:
         broker = self._broker()
         self._app = broker.NewApplication()
         try:
-            self._app.NewProject(project_name or "Project", cpu_part_number, cpu_version)
+            # Control Expert ignores the name argument here (the project is named
+            # by its .stu file at save time), so we pass a fixed placeholder.
+            self._app.NewProject("Project", cpu_part_number, cpu_version)
         except Exception as exc:
             err = _format_com_error(exc)
             self._do_close(False)
@@ -393,6 +404,7 @@ class ControlExpertBridge:
     def _do_build(self, rebuild_all: bool) -> dict:
         proj = self._project(write=True)
         error: str | None = None
+        fell_back = False
         try:
             if rebuild_all:
                 proj.BuildAll()
@@ -400,9 +412,31 @@ class ControlExpertBridge:
                 proj.Build()
         except Exception as exc:
             error = _format_com_error(exc)
+            # On a fresh/just-imported project there are no previously generated
+            # changes to build incrementally, so Build() fails with HRESULT
+            # 0x80020009. The diagnostic text "Build changes function not
+            # available" is written to the OUTPUT WINDOW, not the COM exception
+            # (whose EXCEPINFO carries only the generic "Process failed" summary),
+            # so check both sources. The actionable recovery is always a full
+            # rebuild — do it automatically instead of surfacing a dead-end error.
+            if not rebuild_all and (
+                _is_build_changes_unavailable(exc)
+                or "build changes" in self._do_read_output_window().lower()
+            ):
+                error = None
+                fell_back = True
+                try:
+                    proj.BuildAll()
+                except Exception as exc2:
+                    error = _format_com_error(exc2)
         result: dict[str, Any] = {
             "build_state": C.BUILD_STATES.get(int(proj.InfoBuildState), "unknown"),
         }
+        if fell_back:
+            result["note"] = (
+                "Incremental build was unavailable (nothing built yet); "
+                "performed a full rebuild instead."
+            )
         if error:
             result["error"] = error
         result["output"] = self._do_read_output_window()
@@ -573,6 +607,37 @@ class ControlExpertBridge:
             if str(var.Name).lower() == target:
                 return var
         raise CEError(f"Variable '{name}' not found.")
+
+    def resolve_addresses(self, names: list[str]) -> dict:
+        return self._run(self._do_resolve_addresses, names)
+
+    def _do_resolve_addresses(self, names: list[str]) -> dict:
+        """Map global variable names to their topological address + IEC type
+        (one pass over the Variables collection). Used by the Modbus tools to
+        turn a tag name into a located %M/%MW address. Unresolved names get an
+        empty record so the caller can report them."""
+        proj = self._project(write=False)
+        wanted = {n.lower(): n for n in names}
+        out: dict[str, dict] = {}
+        for var in _iter_collection(proj.Variables):
+            key = str(var.Name).lower()
+            if key not in wanted:
+                continue
+            entry: dict[str, str] = {"name": str(var.Name)}
+            try:
+                entry["address"] = str(var.TopologicalAddress or "")
+            except Exception:
+                entry["address"] = ""
+            try:
+                entry["type"] = str(var.TypeName)
+            except Exception:
+                entry["type"] = ""
+            out[wanted[key]] = entry
+            if len(out) == len(wanted):
+                break
+        for orig in wanted.values():
+            out.setdefault(orig, {"name": orig, "address": "", "type": ""})
+        return out
 
     def create_variable(
         self,
@@ -945,12 +1010,7 @@ class ControlExpertBridge:
 
         datablock = ""
         if declare:
-            rows = "".join(
-                f'\t\t<variables name="{escape(n, {chr(34): "&quot;"})}" '
-                f'typeName="{escape(t, {chr(34): "&quot;"})}"></variables>\n'
-                for n, t in declare.items()
-            )
-            datablock = f"\t<dataBlock>\n{rows}\t</dataBlock>\n"
+            datablock = f"\t<dataBlock>\n{self._variable_rows(declare)}\t</dataBlock>\n"
         xml = ST_ENVELOPE.format(
             name=escape(section_name, {'"': "&quot;"}),
             task=escape(task_name, {'"': "&quot;"}),
@@ -959,6 +1019,216 @@ class ControlExpertBridge:
         )
         result = self._do_import_xml(xml, None, "section", task_name, "overwrite")
         return {"section": section_name, "task": task_name, **result}
+
+    @staticmethod
+    def _parse_variables(text: str) -> list[tuple[str, str]]:
+        """Pull (name, typeName) pairs from <variables> declarations in XML text."""
+        return re.findall(r'<variables name="([^"]+)" typeName="([^"]+)"', text)
+
+    @staticmethod
+    def _variable_rows(decls: dict[str, str]) -> str:
+        """Render {name: type} as XML-escaped <variables> dataBlock rows."""
+        from xml.sax.saxutils import escape
+
+        q = {'"': "&quot;"}
+        return "".join(
+            f'\t\t<variables name="{escape(n, q)}" typeName="{escape(t, q)}"></variables>\n'
+            for n, t in decls.items()
+        )
+
+    def clone_fb_in_ladder(
+        self, task_name: str, template_section: str, new_section: str,
+        instance_name: str, bindings: dict[str, str],
+    ) -> dict:
+        return self._run(
+            self._do_clone_fb_in_ladder, task_name, template_section, new_section,
+            instance_name, bindings,
+        )
+
+    def _do_clone_fb_in_ladder(
+        self, task_name, template_section, new_section, instance_name, bindings,
+    ) -> dict:
+        """Clone a GUID-made FFB-in-LD template section, rebinding the function
+        block's instance name and pin variables. The block geometry (which
+        Control Expert auto-lays-out and which cannot be hand-authored) is
+        copied verbatim; only the section name, the FFBBlock instanceName, the
+        bound effectiveParameters and the data declarations change."""
+        proj = self._project(write=True)
+        task = self._find_task(proj, task_name)
+        tsec = self._find_section(task, template_section)
+        xml = self._export_to_text(tsec, ".xpg", C.EXPORT_BASIC)
+
+        # type of every variable declared in the template's dataBlock
+        var_types = dict(self._parse_variables(xml))
+
+        bmatch = re.search(r"<FFBBlock\b.*?</FFBBlock>", xml, re.S)
+        if not bmatch:
+            raise CEError(
+                f"No FFBBlock found in template section '{template_section}'. "
+                "The template must be a GUI-authored LD section containing the block."
+            )
+        block_xml = bmatch.group(0)
+        old_inst = re.search(r'instanceName="([^"]+)"', block_xml).group(1)
+        block_type = re.search(r'typeName="([^"]+)"', block_xml).group(1)
+        # pin -> original effectiveParameter ('' when unbound). An in-out pin
+        # appears twice (input + output) — keep the first NON-empty binding so
+        # type inference uses the bound occurrence.
+        pin_orig: dict[str, str] = {}
+        for m in re.finditer(
+            r'formalParameter="([^"]+)"(?:\s+effectiveParameter="([^"]*)")?', block_xml
+        ):
+            pin, eff = m.group(1), (m.group(2) or "")
+            if pin not in pin_orig or (eff and not pin_orig[pin]):
+                pin_orig[pin] = eff
+
+        new_xml = xml
+        new_xml = re.sub(r'(<identProgram\s+name=")[^"]*(")', rf"\g<1>{new_section}\g<2>",
+                         new_xml, count=1)
+        new_xml = new_xml.replace(f'instanceName="{old_inst}"', f'instanceName="{instance_name}"', 1)
+
+        def rebind(m) -> str:
+            tag = m.group(0)
+            fm = re.search(r'formalParameter="([^"]+)"', tag)
+            if not fm or fm.group(1) not in bindings:
+                return tag
+            val = bindings[fm.group(1)]
+            if "effectiveParameter=" in tag:
+                return re.sub(r'effectiveParameter="[^"]*"', f'effectiveParameter="{val}"', tag)
+            return tag.replace(fm.group(0), f'{fm.group(0)} effectiveParameter="{val}"', 1)
+
+        new_xml = re.sub(r"<(?:input|output)Variable\b[^>]*?>", rebind, new_xml)
+
+        # rebuild dataBlock: new instance var + every bound variable (type inferred
+        # by pin from the template), skipping literals (0/1, t#..., numbers).
+        decls = {instance_name: block_type}
+        for pin, orig in pin_orig.items():
+            val = bindings.get(pin, orig)
+            if not val or not re.fullmatch(r"[A-Za-z_]\w*", val):
+                continue  # unbound or a literal/expression — no declaration needed
+            typ = var_types.get(orig) or var_types.get(val)
+            if typ:
+                decls[val] = typ
+        dblock = self._variable_rows(decls)
+        if "<dataBlock>" in new_xml:
+            new_xml = re.sub(r"<dataBlock>.*?</dataBlock>",
+                             f"<dataBlock>\n{dblock}\t</dataBlock>", new_xml, flags=re.S)
+        else:
+            new_xml = new_xml.replace("</program>", f"</program>\n\t<dataBlock>\n{dblock}\t</dataBlock>")
+
+        result = self._do_import_xml(new_xml, None, "section", task_name, "overwrite")
+        return {
+            "cloned_from": template_section, "new_section": new_section,
+            "instance": instance_name, "block_type": block_type,
+            "declared": decls, **result,
+        }
+
+    def _fb_interface(self, proj, fb_type: str):
+        """Ordered (name, type) pins of a DFB: (inputs, outputs, inouts)."""
+        item = self._find_in_collection(proj.Dfbs, fb_type, "DFB")
+        xml = self._export_to_text(item, ".xdb", C.EXPORT_BASIC)
+
+        def params(sec: str):
+            m = re.search(rf"<{sec}>(.*?)</{sec}>", xml, re.S)
+            return self._parse_variables(m.group(1)) if m else []
+
+        return params("inputParameters"), params("outputParameters"), params("inOutParameters")
+
+    def place_fb_in_ladder(
+        self, task_name: str, section_name: str, fb_type: str, instance_name: str,
+        bindings: dict[str, str], rung_input: str | None, rung_contact: str | None,
+        pos_x: int = 2,
+    ) -> dict:
+        return self._run(
+            self._do_place_fb_in_ladder, task_name, section_name, fb_type,
+            instance_name, bindings, rung_input, rung_contact, pos_x,
+        )
+
+    def _do_place_fb_in_ladder(
+        self, task_name, section_name, fb_type, instance_name, bindings,
+        rung_input, rung_contact, pos_x,
+    ) -> dict:
+        """Generate (no template) a valid FFB-in-Ladder section for ANY DFB.
+
+        Cracked LD-FFB geometry rule: a block spans height = max(#in,#out)+1 rows;
+        each pin sits on its own row at the block edge; the block reaches the left
+        rail by ONE boolean input wired on its pin-row (a contact -> col pos_x-1),
+        EN left unbound, all other pins bound via effectiveParameter. The pin order
+        in descriptionFFB is honoured by CE, so the wired input's row is its index.
+        """
+        proj = self._project(write=True)
+        try:
+            ins, outs, inouts = self._fb_interface(proj, fb_type)
+        except CEError:
+            raise CEError(
+                f"Could not read interface of '{fb_type}'. place_fb_in_ladder supports "
+                "project DFB types (read automatically). For elementary EFBs (TON, CTU, ...) "
+                "author the block in FBD, or use a GUI template with use_fb_in_ladder."
+            ) from None
+
+        bool_ins = [n for n, t in ins if t.upper() in ("BOOL", "EBOOL")]
+        if rung_input is None:
+            if not bool_ins:
+                raise CEError(
+                    f"'{fb_type}' has no BOOL/EBOOL input to drive from the ladder rung. "
+                    "Pass rung_input explicitly, or author the block in FBD."
+                )
+            rung_input = bool_ins[0]
+        rung_contact = rung_contact or f"{instance_name}_EN"
+
+        in_names = ["EN", rung_input] + [n for n, _ in ins if n != rung_input] + [n for n, _ in inouts]
+        out_names = ["ENO"] + [n for n, _ in outs] + [n for n, _ in inouts]
+
+        def pin(tag: str, name: str) -> str:
+            if name in ("EN", "ENO") or name == rung_input or name not in bindings:
+                eff = ""
+            else:
+                eff = f' effectiveParameter="{bindings[name]}"'
+            return (f'\t\t\t\t\t\t\t<{tag} invertedPin="false" formalParameter="{name}"'
+                    f"{eff}></{tag}>\n")
+
+        desc = "".join(pin("inputVariable", n) for n in in_names) + \
+               "".join(pin("outputVariable", n) for n in out_names)
+        height = max(len(in_names), len(out_names)) + 1
+        block = (
+            f'<FFBBlock instanceName="{instance_name}" typeName="{fb_type}" '
+            f'additionnalPinNumber="0" enEnO="true" width="10" height="{height}">\n'
+            f'\t\t\t\t\t\t<objPosition posX="{pos_x}" posY="0"></objPosition>\n'
+            f'\t\t\t\t\t\t<descriptionFFB execAfter="">\n{desc}\t\t\t\t\t\t</descriptionFFB>\n'
+            "\t\t\t\t\t</FFBBlock>"
+        )
+        # rung_input is always at in_names index 1 (right after EN), so its pin
+        # sits on the row directly below the block's top — the feed contact goes
+        # on the very next typeLine, no spacer rows needed.
+        rows = [f'\t\t\t\t<typeLine><emptyCell nbCells="{pos_x}"></emptyCell>{block}'
+                f'<emptyCell nbCells="{11 - pos_x - 2}"></emptyCell></typeLine>']
+        feed = (f'<contact typeContact="openContact" contactVariableName="{rung_contact}"></contact>'
+                + (f'<HLink nbCells="{pos_x - 1}"></HLink>' if pos_x - 1 > 0 else ""))
+        rows.append(f'\t\t\t\t<typeLine>{feed}<emptyCell nbCells="{11 - pos_x}"></emptyCell></typeLine>')
+        rows.append('\t\t\t\t<typeLine><emptyLine nbRows="2"></emptyLine></typeLine>')
+
+        decls = {instance_name: fb_type, rung_contact: "BOOL"}
+        typemap = dict(ins + outs + inouts)
+        for pinname, val in bindings.items():
+            if re.fullmatch(r"[A-Za-z_]\w*", str(val)) and pinname in typemap:
+                decls[val] = typemap[pinname]
+        dblock = self._variable_rows(decls)
+        xml = (
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<LDExchangeFile>\n'
+            '\t<fileHeader company="Schneider Automation" product="Control Expert V14.0 - 190112" '
+            'content="Ladder source file" DTDVersion="41"></fileHeader>\n'
+            '\t<contentHeader name="Project" version="0.0.000"></contentHeader>\n\t<program>\n'
+            f'\t\t<identProgram name="{section_name}" type="section" task="{task_name}"></identProgram>\n'
+            '\t\t<LDSource nbColumns="11">\n\t\t\t<networkLD>\n'
+            + "\n".join(rows) +
+            '\n\t\t\t</networkLD>\n\t\t</LDSource>\n\t</program>\n'
+            f'\t<dataBlock>\n{dblock}\t</dataBlock>\n</LDExchangeFile>\n'
+        )
+        result = self._do_import_xml(xml, None, "section", task_name, "overwrite")
+        return {
+            "section": section_name, "instance": instance_name, "block_type": fb_type,
+            "rung_input": rung_input, "rung_contact": rung_contact,
+            "height": height, "declared": decls, **result,
+        }
 
     def export_xml(self, kind: str, task_name: str | None, name: str | None) -> dict:
         return self._run(self._do_export_xml, kind, task_name, name)
@@ -1034,23 +1304,68 @@ class ControlExpertBridge:
 
     # ------------------------------------------------------------ public: UI
 
-    def show_ui(self, state: str) -> dict:
-        return self._run(self._do_show_ui, state)
+    def show_ui(self, state: str, mode: str = "read_only", command_line: str = "") -> dict:
+        return self._run(self._do_show_ui, state, mode, command_line)
 
-    def _do_show_ui(self, state: str) -> dict:
+    def _do_show_ui(self, state: str, mode: str, command_line: str) -> dict:
         app = self._ensure_app()
         code = C.SHOW_STATES.get(state, C.SHOW_STATES["show_normal"])
+        # DisplayStart fails in read-write when this automation client already
+        # holds the write token (it almost always does). Read-only is also the
+        # only mode in which <object>.DisplayEditor works — so it is the right
+        # default for "let a human watch while the client drives".
+        hmi = C.HMI_READ_WRITE if mode == "read_write" else C.HMI_READ_ONLY
         try:
-            app.DisplayStart(C.HMI_READ_WRITE, "")
+            app.DisplayStart(hmi, command_line or "")
         except Exception:
             pass
         try:
             app.SetDisplayPosition(0, 0, 1280, 900, code)
-            return {"visible": bool(int(app.IsVisible))}
+            return {"visible": bool(int(app.IsVisible)), "mode": "read_write" if hmi else "read_only"}
         except Exception as exc:
             raise CEError(
                 f"Could not show the Control Expert window: {_format_com_error(exc)}"
             ) from exc
+
+    def open_animation_table(self, name: str, state: str = "show_normal") -> dict:
+        return self._run(self._do_open_anim_table_editor, name, state)
+
+    def _do_open_anim_table_editor(self, name: str, state: str) -> dict:
+        """Open an animation table's editor inside the live Control Expert
+        window. Connect to the simulator/PLC first (plc_connect) and the table
+        then animates live values in the GUI. Per the UDE architecture doc,
+        DisplayEditor requires the GUI started in READ-ONLY mode while a
+        software client holds the write token."""
+        app = self._ensure_app()
+        table = self._find_anim_table(self._anim_tables(write=False), name)
+        if table is None:
+            raise CEError(
+                f"Animation table '{name}' not found — create it with "
+                "create_animation_table first."
+            )
+        try:
+            app.DisplayStart(C.HMI_READ_ONLY, "")
+        except Exception:
+            pass
+        try:
+            self._get_prop(table, "DisplayEditor")
+        except Exception as exc:
+            raise CEError(
+                f"Could not open the animation table editor: {_format_com_error(exc)}. "
+                "The GUI must be in read-only mode (it is opened that way here)."
+            ) from exc
+        code = C.SHOW_STATES.get(state, C.SHOW_STATES["show_normal"])
+        try:
+            app.SetDisplayPosition(0, 0, 1280, 900, code)
+        except Exception:
+            pass
+        visible = False
+        try:
+            visible = bool(int(app.IsVisible))
+        except Exception:
+            pass
+        return {"opened_editor": name, "visible": visible,
+                "note": "Connect (plc_connect) and the table animates live in the CE window."}
 
     # -------------------------------------------------------- public: online
 
@@ -1399,9 +1714,31 @@ class ControlExpertBridge:
         # Modules.ReplaceChild is rack-only ('service not applicable here'),
         # so module replacement = DeleteChild + AddChild.
         modules = self._local_modules(bus_name, drop_topo, rack_topo)
-        self._get_prop(modules, "DeleteChild", slot, 0)
+        try:
+            self._get_prop(modules, "DeleteChild", slot, 0)
+        except Exception as exc:
+            raise self._module_delete_error(exc, "replace", slot, drop_topo) from None
         added = self._wrap(self._get_prop(modules, "AddChild", slot, 0, new_pn, new_ver))
         return {"replaced": self._hw_info(self._qi(added, "IModule"))}
+
+    @staticmethod
+    def _module_delete_error(exc: Exception, action: str, slot: int, drop_topo) -> "CEError":
+        """Wrap an IModules.DeleteChild failure with an actionable hint. On a
+        remote EIO/X80 drop rack DeleteChild is rejected ('service not
+        applicable here') even though AddChild works there — a headless-API
+        limitation, not a slot mistake."""
+        msg = _format_com_error(exc)
+        if "not applicable" in msg.lower():
+            where = "a remote EIO/X80 drop rack" if drop_topo not in (None, 0) else "this rack"
+            return CEError(
+                f"Cannot {action} the module at slot {slot}: {msg}. Removing or "
+                f"replacing modules on {where} is not supported by the headless "
+                "automation API (IModules.DeleteChild is rejected there) — AddChild "
+                "works, but delete/replace do not. Workaround: delete and re-create "
+                "the whole drop, or place the correctly-sized module (e.g. an adequate "
+                "power supply) when first populating the rack."
+            )
+        return CEError(f"Cannot {action} the module at slot {slot}: {msg}.")
 
     def replace_rack(
         self,
@@ -1445,7 +1782,10 @@ class ControlExpertBridge:
 
     def _do_remove_io_module(self, slot, rack_topo, drop_topo, bus_name) -> dict:
         modules = self._local_modules(bus_name, drop_topo, rack_topo)
-        self._get_prop(modules, "DeleteChild", slot, 0)
+        try:
+            self._get_prop(modules, "DeleteChild", slot, 0)
+        except Exception as exc:
+            raise self._module_delete_error(exc, "remove", slot, drop_topo) from None
         return {"removed_slot": slot, "rack": rack_topo}
 
     def _find_bus(self, bus_name: str | None):
@@ -1807,23 +2147,51 @@ class ControlExpertBridge:
         data = self._invoke_out(dtm, "ExportConfiguration", (), (pythoncom.VT_VARIANT,))
         raw = bytes(bytearray(data)) if not isinstance(data, (bytes, bytearray)) else bytes(data)
         text = None
-        for enc in ("utf-8-sig", "utf-16", "utf-8", "latin-1"):
-            try:
-                text = raw.decode(enc)
-                break
-            except (UnicodeDecodeError, UnicodeError):
-                continue
-        if text is None or "<" not in text[:200]:
+        # ExportConfiguration returns a binary-framed FDT dataset container, NOT a
+        # clean XML document: a small length/GUID/type header wraps UTF-16LE XML,
+        # so ~half the bytes are NUL. Decoding the whole buffer as UTF-8 *succeeds*
+        # but yields NUL-interleaved garbage; pick UTF-16 by NUL ratio instead (a
+        # bare raw[1]==0 test misses headers like b"\\\r\x00\x00..." on IO racks).
+        nul_ratio = (raw.count(0) / len(raw)) if raw else 0.0
+        if raw[:2] in (b"\xff\xfe", b"\xfe\xff"):
+            text = raw.decode("utf-16", errors="replace")
+        elif nul_ratio > 0.2 and len(raw) % 2 == 0:
+            text = raw.decode("utf-16-le", errors="replace")
+        else:
+            for enc in ("utf-8-sig", "utf-8", "latin-1"):
+                try:
+                    text = raw.decode(enc)
+                    break
+                except (UnicodeDecodeError, UnicodeError):
+                    continue
+        lt = text.find("<") if text else -1
+        if lt < 0:
             path = self._temp_path(f"_{name}_dataset.bin")
             with open(path, "wb") as f:
                 f.write(raw)
             return {"dtm": name, "binary": True, "file": path, "size": len(raw)}
-        if len(raw) > MAX_INLINE_BYTES:
+        # Strip the binary framing before the first '<'. The result is the
+        # embedded XML, readable for inspection but NOT byte-faithful, so it is
+        # not safely round-trippable through set_dtm_dataset.
+        xml_text = text[lt:]
+        framed = lt > 0 or "\x00" in xml_text
+        result: dict[str, Any] = {"dtm": name}
+        if framed:
+            result["note"] = (
+                "This DTM dataset is a binary-framed FDT container; the returned "
+                "'xml' has the framing stripped for reading and is NOT byte-faithful "
+                "— do not round-trip it through set_dtm_dataset. For M580 Modbus scan "
+                "lines use get_master_dtm_dataset / set_master_dtm_dataset instead."
+            )
+        if len(xml_text.encode("utf-8", errors="ignore")) > MAX_INLINE_BYTES:
             path = self._temp_path(f"_{name}_dataset.xml")
             with open(path, "w", encoding="utf-8") as f:
-                f.write(text)
-            return {"dtm": name, "too_large_inline": True, "file": path}
-        return {"dtm": name, "xml": text}
+                f.write(xml_text)
+            result["too_large_inline"] = True
+            result["file"] = path
+            return result
+        result["xml"] = xml_text
+        return result
 
     def set_dtm_dataset(self, name: str, xml: str) -> dict:
         return self._run(self._do_set_dtm_dataset, name, xml)
@@ -1985,6 +2353,7 @@ class ControlExpertBridge:
         import zipfile
 
         proj = self._project(write=True)
+        orig_path = self._project_path  # restore on success/rollback
         zef = self._temp_path(".zef")
         new_zef = self._temp_path("_mod.zef")
         proj.Export(zef, C.EXPORT_PROJECT_FULL)
@@ -1999,19 +2368,24 @@ class ControlExpertBridge:
                     if item.filename == bin_name:
                         data = xml.encode(enc)
                     dst.writestr(item, data)
-            # Reload the project from the modified archive
-            self._do_close(False)
-            broker = self._broker()
-            self._app = broker.NewApplication()
-            self._app.ImportProject(new_zef)
-            self._project_path = None
+            # Reload from the modified archive; roll back to the untouched export
+            # if the dataset is rejected, so the caller keeps an open project.
+            self._reimport_zef(
+                new_zef, zef, orig_path,
+                "set_master_dtm_dataset failed: the modified DTM dataset was "
+                "rejected ({error}). Return the ENTIRE dataset byte-faithfully and "
+                "change ONLY the <ManagedModbusRequestList> contents — trimming or "
+                "reordering other sections is rejected. The original project has "
+                "been restored (unsaved).",
+            )
+            self._project_path = orig_path
+            self._needs_saveas = orig_path is not None
             return {
                 "dataset_entry": bin_name,
                 "reloaded": True,
                 "note": (
                     "Project was reloaded from the modified ZEF and is unsaved — "
-                    "run build_project to validate the scan lines, then save_project "
-                    "with a .stu path."
+                    "run build_project to validate the scan lines, then save_project."
                 ),
             }
         finally:
@@ -2082,6 +2456,29 @@ class ControlExpertBridge:
             pos += 28
         raise CEError(f"{section} section not found in the DTM PrmCfg container.")
 
+    def _reimport_zef(self, new_zef: str, orig_zef: str, orig_path, fail_hint: str) -> None:
+        """Close the live project and reimport new_zef. Closing is destructive,
+        so if the modified archive is rejected, roll back by reimporting the
+        untouched orig_zef — the caller is NEVER left without an open project —
+        then raise CEError(fail_hint.format(error=...)). On success the caller
+        sets _project_path as it sees fit."""
+        self._do_close(False)
+        broker = self._broker()
+        self._app = broker.NewApplication()
+        try:
+            self._app.ImportProject(new_zef)
+        except Exception as exc:
+            msg = _format_com_error(exc)
+            del exc
+            try:
+                self._app = broker.NewApplication()
+                self._app.ImportProject(orig_zef)
+                self._project_path = orig_path
+                self._needs_saveas = orig_path is not None
+            except Exception:
+                pass
+            raise CEError(fail_hint.format(error=msg)) from None
+
     def _do_zef_patch(self, patchers: dict) -> dict:
         """Export the project to a full ZEF, run each patcher (entry name ->
         bytes-in/bytes-out callable) on its archive entry, reimport the patched
@@ -2109,12 +2506,13 @@ class ControlExpertBridge:
                         data = patchers[item.filename](data)
                         patched.append(item.filename)
                     dst.writestr(item, data)
-            self._do_close(False)
-            broker = self._broker()
-            self._app = broker.NewApplication()
-            self._app.ImportProject(new_zef)
             # ImportProject leaves the in-memory project without a .stu binding;
             # remember the source path so save_project(None) does a SaveAs to it.
+            self._reimport_zef(
+                new_zef, zef, orig_path,
+                "Project reload failed after patching ({error}). The original "
+                "project has been restored (unsaved).",
+            )
             self._project_path = orig_path
             self._needs_saveas = orig_path is not None
             return {"patched_entries": patched, "reloaded": True}

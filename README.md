@@ -18,8 +18,9 @@ AI agent (Claude, Copilot, ...) ──MCP/stdio──> control-expert-mcp ──
 - **Networks** (Premium/Quantum): create logical Ethernet networks and set their IP service configuration
 - **Variables**: list/create/update/delete global variables incl. type, comment, address (`%MW...`), initial value
 - **Build**: analyze and build the project, get the resulting build state
-- **UI**: pop the Control Expert window open so a human can watch or take over
+- **UI**: pop the Control Expert window open so a human can watch or take over, and open an animation table's editor live (`open_animation_table`) to watch values animate while the AI drives a test
 - **Online** (opt-in): connect to PLC/simulator, download/upload, run/stop
+- **Live values** (opt-in): read and write running PLC/simulator values over **Modbus TCP** (`modbus_connect` → `read_tags`/`write_tags`) — the UDE/COM API has no live tag access, so this is the channel for testing logic against a running controller (located `%M`/`%MW` tags; mirror unlocated DFB internals to `%MW` first)
 
 ## Requirements
 
@@ -91,6 +92,9 @@ claude mcp add control-expert -- C:\path\to\control-expert-mcp\.venv\Scripts\pyt
 | `read_section` | Section logic as Control Expert XML |
 | `write_st_logic` | **Write ST logic as plain IEC text** (no XML) — creates or replaces a section, with inline variable declarations |
 | `get_language_reference` | Authoring guide + validated example for ST/LD/FBD/SFC/IL — the exchange-XML structure rules an AI client needs to write graphical logic (FBD pin-geometry rule, LD line/cell model, SFC chart layout) |
+| `validate_xml` | **Pre-validate** candidate exchange-XML against the installed `SrcXmlSchema` XSDs before import/build — instant structural errors with the legal value sets |
+| `place_fb_in_ladder` | **Drop any project DFB into Ladder, no template** — reads the DFB interface and generates the correct (CE-owned) pin geometry automatically, then bind pins |
+| `use_fb_in_ladder` | Clone a GUI-authored block-in-LD template and rebind instance + variables (fallback for elementary EFBs / exact GUI geometry) |
 | `create_section` / `delete_section` | Section management (ST/LD/FBD/SFC/IL) |
 | `create_task` | Add MAST/FAST/AUX/SAFE task |
 | `import_xml` | **The main write path** — import section logic, variables, DFB/DDT types, configuration, or whole-project exchange files (inline XML or file) |
@@ -110,8 +114,11 @@ claude mcp add control-expert -- C:\path\to\control-expert-mcp\.venv\Scripts\pyt
 | `get_dtm_dataset` / `set_dtm_dataset` | A slave DTM's own dataset (identity + bus address) |
 | `get_master_dtm_dataset` / `set_master_dtm_dataset` | The master/CPU DTM dataset (via ZEF round-trip) — `<SlaveDevices>/<ManagedModbusRequestList>` holds the **Modbus scan lines**; write a `ManagedModbusRequest` node to add a request |
 | `list_networks` / `add_network` / `set_network_ip` | Logical networks on Premium/Quantum |
-| `show_ui` | Make the Control Expert window visible |
+| `show_ui` | Make the Control Expert window visible (read-only by default so it can follow along / open editors while the client keeps write) |
+| `open_animation_table` | Open an animation table's editor in the live CE window so a human watches values animate during a test |
 | `plc_*` (opt-in) | Online: setup/connect/disconnect/state/transfer/run/stop |
+| `modbus_connect` / `modbus_disconnect` / `modbus_status` (opt-in) | Open/close a Modbus TCP link to the CPU/simulator's server (`127.0.0.1:502` for the sim) for live values |
+| `read_tags` / `write_tags` (opt-in) | Read/write LIVE located-tag values (`%M`/`%MW`) by name or address (`%MW86`, `%MW2:REAL`); the only live read/write path (COM API has none) |
 
 ### How the AI writes logic
 
@@ -152,6 +159,44 @@ Starting/stopping a PLC or downloading an application affects the physical proce
 
 > **Known limitation:** a freshly started simulator with *no station loaded* (`plc_state` = `no_conf`) rejects `plc_transfer` with *"Family check failed"* — the API download (unlike the Control Expert GUI's) requires the sim to already have a station of a matching family. Seed it once by transferring any project from the Control Expert GUI (PLC → Simulation Mode → Connect → Transfer); the loaded station persists while sim.exe runs, and all API downloads work from then on (stop the PLC first — transfer to a running PLC fails).
 
+### Live values over Modbus TCP (validated end to end)
+
+The UDE/COM automation API serves the *project database* — it has **no live tag-value read/write** (animation tables only render in the GUI; `IVariable` exposes only the offline initial value). Live values go over the CPU's **Modbus TCP server** instead — the same channel SCADA/Vijeo use:
+
+```
+modbus_connect(host="127.0.0.1")          # the sim's Modbus server; or a real CPU IP, port 502
+read_tags("EMFM1FLOW, RESIDUAL2CLTHSP, %MW0, %MW2:REAL")
+write_tags({"RESIDUAL2CLTHSP": 4.0, "%MX100.0": true})
+```
+
+- Tags are global variable **names** (address + IEC type resolved from the project) or explicit **addresses** with optional `:TYPE` (`%MW86`, `%MW2:REAL`, `%MW70:UDINT`, `%M3`, `%MW10.2` bit). Decoding is type-driven (INT/UINT, DINT/UDINT, REAL, BOOL coil/word-bit).
+- **Only LOCATED `%M`/`%MW` tags are reachable.** Unlocated DFB internals (e.g. `Pump1.Running`) must be mirrored to `%MW`/`%M` in the program first (see the `test_logic_live` prompt).
+- 32-bit `REAL`/`DINT` use **Schneider low-word-first** order by default; pass `word_order="high_first"` if a server differs.
+- The Control Expert **simulator exposes a Modbus server on `127.0.0.1:502`**, so the whole read/write test loop works against the sim — no hardware required.
+
+## Prompts (guided workflows)
+
+The server ships **MCP prompts** ([src/control_expert_mcp/prompts.py](src/control_expert_mcp/prompts.py)) — reusable recipes that encode the validated flows *and their non-obvious gotchas* so a client doesn't rediscover them by trial and error. In Claude Code they appear as `/mcp__control-expert__<name>` slash commands; other MCP clients list them in their prompt picker.
+
+| Prompt | What it walks you through |
+| --- | --- |
+| `commission_simulator` | Build → start sim → connect → transfer → run, incl. the **manual first-transfer / "Family check failed"** seed step |
+| `test_logic_live` | The Modbus test loop for a DFB instance, incl. **mirroring unlocated internals to `%MW`** and word-order gotcha |
+| `author_logic` | The `get_language_reference` → write/import → `build_project` → fix-from-output loop (per language) |
+| `scaffold_project` | `new_project` (exact CPU+version) → rack/PSU/IO → build → save |
+| `add_modbus_device` | Add a Modbus-TCP slave DTM under the M580 CPU and configure a scan line |
+
+## Extending the server
+
+When you add a tool or capability, **also add (or extend) an MCP prompt** in [prompts.py](src/control_expert_mcp/prompts.py) that walks a client through using it. This is a project convention, not an afterthought: a good prompt turns an hour of trial-and-error into one slash command.
+
+Write a prompt for anything a client **cannot guess from the tool description alone** — an environment flag (`CE_MCP_ENABLE_ONLINE`), a manual GUI step (the simulator family-check seed), an ordering constraint (stop the PLC before transfer), or an addressing rule (located-only Modbus, low-word-first REALs). Rules of thumb:
+
+- Each new workflow → a prompt; each new tool → at least a mention in a relevant prompt.
+- Put the **gotcha** in the prompt text explicitly (the steps that cost *you* time while building it).
+- Mirror the validated sequence (tool names + argument shapes), and reference related prompts by name.
+- Keep the standing orientation in the server `instructions` string short; put step-by-step recipes in prompts.
+
 ## Troubleshooting
 
 - **`Catalog object not found` on `new_project`** — the CPU part number/version must exactly match the hardware catalog of *your* Control Expert version (spacing matters: `BMX P34 2020`, firmware like `02.70` is required).
@@ -171,7 +216,7 @@ Starting/stopping a PLC or downloading an application affects the physical proce
 - The **write-access token** (`app.Project(1)`) is acquired once per session and cached; failed-call tracebacks are stripped so they can't pin COM references and deadlock `ProjectClose`.
 - `Project` is a parameterized COM property — it is invoked with explicit `DISPATCH_PROPERTYGET` flags because pywin32 dynamic dispatch can't call it.
 - Import temp files get the **extension matching the XML root element** (`STExchangeFile` → `.xst`, `VariablesExchangeFile` → `.xsy`, ...) because Control Expert picks the parser from the extension.
-- Enum constants (languages, export options, PLC commands...) were extracted from `PServer.tlb` — see [src/control_expert_mcp/constants.py](src/control_expert_mcp/constants.py) and [tools/dump_tlb_enums.py](tools/dump_tlb_enums.py).
+- Enum constants (languages, export options, PLC commands...) were extracted from `PServer.tlb` — see [src/control_expert_mcp/constants.py](src/control_expert_mcp/constants.py).
 
 ## Disclaimer
 

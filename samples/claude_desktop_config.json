@@ -1,7 +1,7 @@
 {
   "mcpServers": {
     "control-expert": {
-      "command": "C:\\Users\\TOJG\\Desktop\\MCP server\\control-expert-mcp\\.venv\\Scripts\\python.exe",
+      "command": "C:\\path\\to\\control-expert-mcp\\.venv\\Scripts\\python.exe",
       "args": ["-m", "control_expert_mcp"],
       "env": {
         "CE_MCP_ENABLE_ONLINE": "0"

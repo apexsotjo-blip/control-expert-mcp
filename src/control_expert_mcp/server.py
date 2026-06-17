@@ -13,6 +13,9 @@ import sys
 from mcp.server.fastmcp import FastMCP
 
 from .bridge import ControlExpertBridge
+from .modbus import ModbusClient, ModbusError, parse_address
+from .prompts import register_prompts
+from . import schema as ce_schema
 
 logging.basicConfig(
     level=logging.INFO,
@@ -32,13 +35,61 @@ mcp = FastMCP(
         "write_st_logic (plain IEC text, no XML). For LD/FBD/SFC, FIRST call "
         "get_language_reference(language) and mirror its validated example via "
         "import_xml(kind='section'). SFC is the right choice for stepwise "
-        "sequences (steps + transitions + ST actions)."
+        "sequences (steps + transitions + ST actions).\n\n"
+        "Live testing: online tools (plc_*, modbus_*) need CE_MCP_ENABLE_ONLINE=1. "
+        "To run a project on the simulator, see the commission_simulator prompt (a "
+        "fresh sim needs a one-time manual transfer from the CE GUI to seed the CPU "
+        "family — 'Family check failed' otherwise). Reading/writing LIVE values is "
+        "done over Modbus TCP (modbus_connect/read_tags/write_tags), not the COM API; "
+        "only LOCATED %M/%MW tags are reachable, so mirror unlocated DFB internals to "
+        "%MW first (see the test_logic_live prompt). Invoke a guided prompt instead of "
+        "rediscovering these flows."
     ),
 )
 
+# FastMCP doesn't forward a version to the low-level server, so its serverInfo
+# would otherwise report the mcp SDK version; set the real package version.
+mcp._mcp_server.version = "0.9.0"
+
 ce = ControlExpertBridge()
+mb = ModbusClient()
+register_prompts(mcp)
 
 ONLINE_ENABLED = os.environ.get("CE_MCP_ENABLE_ONLINE", "").strip() in ("1", "true", "yes")
+
+
+def _default_type_for(address: str) -> str:
+    """Default IEC type when a raw %-address is given without one."""
+    try:
+        family, _, _ = parse_address(address)
+    except ModbusError:
+        return "INT"
+    return "BOOL" if family in ("M", "MX") else "INT"
+
+
+def _build_tag_plan(specs: list[str]) -> list[list]:
+    """Turn tag specs into [label, address, type] rows. Each spec is a global
+    variable name (address+type resolved from the project) or an explicit
+    address with optional ':TYPE' (e.g. '%MW2:REAL', '%MW70:UDINT', '%M3')."""
+    plan: list[list] = []
+    names: list[str] = []
+    for spec in specs:
+        spec = spec.strip()
+        if not spec:
+            continue
+        if spec.startswith("%"):
+            addr, _, typ = spec.partition(":")
+            plan.append([spec, addr.strip(), typ.strip() or _default_type_for(addr.strip())])
+        else:
+            names.append(spec)
+            plan.append([spec, None, None])
+    if names:
+        resolved = ce.resolve_addresses(names)
+        for row in plan:
+            if row[1] is None:
+                rec = resolved.get(row[0], {})
+                row[1], row[2] = rec.get("address", ""), rec.get("type", "")
+    return plan
 
 
 # --------------------------------------------------------------- session
@@ -63,16 +114,18 @@ def open_project(path: str) -> dict:
 
 
 @mcp.tool()
-def new_project(cpu_part_number: str, cpu_version: str, project_name: str = "Project") -> dict:
+def new_project(cpu_part_number: str, cpu_version: str) -> dict:
     """Create a new project from scratch for a given PLC CPU.
 
     cpu_part_number must exactly match a CPU reference in the installed Control
     Expert hardware catalog, e.g. 'BMX P34 2020' (M340), 'BME P58 2040' (M580),
     'TSX P57 4634M' (Premium), '140 CPU 651 60' (Quantum). cpu_version is the
     firmware version offered by the catalog and is required, e.g. '02.70'.
-    The project exists only in memory until save_project is called with a path.
+    The project exists only in memory until save_project is called with a path;
+    the project name is taken from that .stu file name (Control Expert has no
+    separate, settable project-name field).
     """
-    return ce.new_project(cpu_part_number, cpu_version, project_name)
+    return ce.new_project(cpu_part_number, cpu_version)
 
 
 @mcp.tool()
@@ -97,7 +150,13 @@ def build_project(rebuild_all: bool = False) -> dict:
     """Build the project (incremental by default, full rebuild with
     rebuild_all=True). Returns the resulting build state and, when available,
     the Control Expert output window text with errors/warnings. A successful
-    build is required before transferring to a PLC or simulator."""
+    build is required before transferring to a PLC or simulator.
+
+    On a fresh or just-imported project an incremental build has nothing to
+    build against and Control Expert raises 'Build changes function not
+    available'; this tool detects that and automatically performs a full
+    rebuild instead (the result carries a 'note' when it does), so the default
+    call works on the first build — you do not need to pass rebuild_all=True."""
     return ce.build_project(rebuild_all)
 
 
@@ -223,11 +282,56 @@ def get_language_reference(language: str) -> dict:
     return {"language": language.upper(), **ref}
 
 
+# The same language references, also exposed as MCP resources so clients that
+# browse resources (rather than call tools) discover the authoring guides. The
+# get_language_reference tool remains the primary, tool-calling path.
+@mcp.resource(
+    "reference://languages",
+    name="Control Expert language references",
+    mime_type="text/plain",
+    description="Index of the per-language authoring guides for writing program "
+    "logic (also available via the get_language_reference tool).",
+)
+def _languages_index() -> str:
+    from .lang_reference import REFERENCES
+
+    lines = [
+        "Control Expert program-language authoring references. Read one with the "
+        "resource reference://language/<LANG> or the get_language_reference tool:",
+    ]
+    lines += [f"- reference://language/{lang}" for lang in sorted(REFERENCES)]
+    return "\n".join(lines)
+
+
+@mcp.resource(
+    "reference://language/{language}",
+    name="Control Expert language reference",
+    mime_type="text/plain",
+    description="Authoring guide and a validated, buildable example for one "
+    "Control Expert language (ST, LD, FBD, SFC, IL).",
+)
+def _language_reference_resource(language: str) -> str:
+    from .lang_reference import REFERENCES
+
+    ref = REFERENCES.get(language.upper())
+    if ref is None:
+        raise ValueError(f"Unknown language '{language}'. Use one of {sorted(REFERENCES)}.")
+    parts = [ref["guide"]]
+    if ref.get("example"):
+        parts.append("\nVALIDATED EXAMPLE (imports and builds with 0 errors):\n")
+        parts.append(ref["example"])
+    return "".join(parts)
+
+
 @mcp.tool()
 def write_st_logic(task: str, section: str, st_source: str, declare: str = "") -> dict:
     """Write a program section in plain IEC 61131-3 Structured Text — no XML
     required. Creates the section or replaces its logic if it exists.
 
+    task is the program task that owns the section — 'MAST' for the default
+    master task (also 'FAST', 'AUX0'..'AUX3', 'SAFE'); call
+    get_project_structure to see the project's tasks. section is the section
+    name to create or overwrite.
     st_source is raw ST (IF/CASE/FOR, FB calls like 'T1(IN := x, PT := t#3s,
     Q => y);', set()/reset() on EBOOLs, re()/fe() edges). declare optionally
     declares variables as a comma-separated 'name:TYPE' list, e.g.
@@ -246,6 +350,61 @@ def write_st_logic(task: str, section: str, st_source: str, declare: str = "") -
 
 
 @mcp.tool()
+def place_fb_in_ladder(
+    section: str, fb_type: str, instance_name: str, bindings: dict,
+    rung_input: str = "", rung_contact: str = "", task: str = "MAST", pos_x: int = 2,
+) -> dict:
+    """Place a function block in LADDER from scratch — NO template needed — for
+    any project DFB. Then build_project to confirm.
+
+    An FFB in Ladder can't normally be hand-authored (CE owns the pin layout), but
+    this generates the correct geometry automatically: it reads the DFB's pin
+    interface, places the block (height = max(in,out)+1), wires ONE boolean input
+    on its pin-row to the rail (EN left enabled), and binds the rest.
+
+    fb_type: a project DFB type (e.g. 'FC_Valve', 'FC_VSD', 'Motor'). instance_name:
+    the FB instance variable. bindings: {pin: variable_or_literal} for the data /
+    in-out / output pins (e.g. {"Valve":"AV2","ExtReset":"0"}); auto-declared with
+    the right types. rung_input: which BOOL input the rung drives (default: first
+    boolean input). rung_contact: the BOOL variable feeding that input (default
+    '<instance>_EN'). For elementary EFBs (TON/CTU/…) author in FBD instead.
+    Multiple blocks = call once per block (each makes its own section)."""
+    return ce.place_fb_in_ladder(
+        task, section, fb_type, instance_name,
+        {str(k): str(v) for k, v in bindings.items()},
+        rung_input or None, rung_contact or None, pos_x,
+    )
+
+
+@mcp.tool()
+def use_fb_in_ladder(
+    template_section: str, new_section: str, instance_name: str,
+    bindings: dict, task: str = "MAST",
+) -> dict:
+    """Place a function block in LADDER by cloning a GUI-authored FFB-in-LD
+    template and rebinding it — then build_project to confirm.
+
+    WHY: an FFB (EF/EFB/DFB) inside Ladder canNOT be hand-authored as XML — its
+    pin columns come from Control Expert's GUI auto-layout, which import can't
+    reproduce. So author the block in LD ONCE in the GUI (a 'template' section
+    containing the FFBBlock), then this tool reuses that exact geometry and only
+    swaps the instance name and pin variables. (For freely hand-authored block
+    logic, use FBD instead.)
+
+    template_section: name of the GUI-made LD section holding the block.
+    new_section: name for the generated section (overwrites if it exists).
+    instance_name: the new FB instance variable name.
+    bindings: {pinName: variable_or_literal} to bind (e.g.
+        {"Valve": "AV2", "ExtIntrlk": "Pump2_Intlk"}); pins you omit keep the
+        template's bindings. Variable pins are auto-declared with the type the
+        template used for that pin. task: the task of both sections (default MAST)."""
+    return ce.clone_fb_in_ladder(
+        task, template_section, new_section, instance_name,
+        {str(k): str(v) for k, v in bindings.items()},
+    )
+
+
+@mcp.tool()
 def read_section(task: str, section: str) -> dict:
     """Read the logic of a program section as Control Expert XML. The XML
     contains the source code (ST text, ladder rungs, FBD networks...) and is
@@ -257,9 +416,12 @@ def read_section(task: str, section: str) -> dict:
 def create_section(task: str, name: str, language: str = "ST") -> dict:
     """Create a new empty program section in a task.
 
-    language: ST, LD, FBD, SFC, IL or LL984. To fill it with logic, follow up
-    with import_xml(kind='section') using XML in the shape returned by
-    read_section.
+    language: ST, LD, FBD, SFC, IL or LL984. To fill it with logic:
+    - ST: call write_st_logic (plain IEC text, no XML) — easiest.
+    - LD / FBD / SFC: FIRST call get_language_reference(language) to get the
+      validated exchange-XML rules and a worked example, then author the
+      section XML and import it with import_xml(kind='section'). SFC suits
+      stepwise sequences.
     """
     return ce.create_section(task, name, language)
 
@@ -289,18 +451,73 @@ def import_xml(
     import_mode: str = "overwrite",
 ) -> dict:
     """Import Control Expert XML into the open project — the main way to write
-    program logic and bulk content.
+    LD/FBD/SFC program logic and bulk content.
 
     kind: 'section' (program logic, requires task), 'variables', 'dfb', 'ddt',
     'configuration', or 'project' (generic project-level import of an exchange
     file). Provide the XML either inline via xml_content or as file_path.
     import_mode: 'overwrite' (default), 'keep_existing' or 'rename'.
 
+    Authoring graphical logic (kind='section'): for LD, FBD or SFC, FIRST call
+    get_language_reference(language) and mirror its validated example, then
+    validate_xml the candidate before importing. For Structured Text use
+    write_st_logic instead (no XML needed). Always build_project afterwards and
+    fix the per-section errors it lists.
+
     Tip: export an existing object first (read_section / export_xml) and use
     its XML as the structural template — Control Expert validates the schema
     strictly.
     """
     return ce.import_xml(xml_content or None, file_path or None, kind, task or None, import_mode)
+
+
+_schema_dir: str | None = None
+
+
+def _resolve_schema_dir() -> str | None:
+    """Locate the SrcXmlSchema folder, caching the first success. The install
+    path is fixed for the process, so this avoids a COM get_status() round-trip
+    and a filesystem re-glob on every validate_xml call once resolved."""
+    global _schema_dir
+    if _schema_dir:
+        return _schema_dir
+    install = None
+    try:
+        install = ce.get_status().get("installation_path")
+    except Exception:
+        pass
+    _schema_dir = ce_schema.find_schema_dir(install)
+    return _schema_dir
+
+
+@mcp.tool()
+def validate_xml(xml_content: str = "", file_path: str = "") -> dict:
+    """Validate candidate Control Expert exchange XML against the installed XSD
+    grammar (the authoritative SrcXmlSchema) BEFORE import_xml / build_project.
+
+    Catches structural errors (unknown elements, bad attribute enumerations,
+    wrong ordering) instantly — far faster than the import+build round-trip — and
+    steers authoring toward the full legal element set. Returns
+    {valid, root, schema, errors}. For LD documents it additionally checks two
+    semantic rules the grammar can't express: per-line cell-count arithmetic
+    (each <typeLine>'s cell-spans must sum to nbColumns) and EBOOL-for-edge
+    rules (P/N contacts and P/N coils need an EBOOL variable). Other semantics
+    (FBD pin geometry, type compatibility) are still caught only by
+    build_project, which remains the final oracle. Set CE_MCP_SCHEMA_DIR to
+    override schema-folder auto-discovery."""
+    if file_path and not xml_content:
+        with open(file_path, encoding="utf-8", errors="replace") as f:
+            xml_content = f.read()
+    if not xml_content.strip():
+        raise ValueError("Provide xml_content or file_path.")
+    sdir = _resolve_schema_dir()
+    if not sdir:
+        return {"valid": None, "error": "Could not locate SrcXmlSchema. "
+                "Set CE_MCP_SCHEMA_DIR to the Control Expert SrcXmlSchema folder."}
+    try:
+        return {**ce_schema.validate(xml_content, sdir), "schema_dir": sdir}
+    except ce_schema.SchemaError as exc:
+        return {"valid": None, "error": str(exc)}
 
 
 @mcp.tool()
@@ -528,10 +745,12 @@ def set_dtm_control_parameters(name: str, xml: str, build: bool = True) -> dict:
 
 @mcp.tool()
 def get_dtm_dataset(name: str) -> dict:
-    """Export a DTM's full configuration dataset. For M580 master DTMs this is
-    the XML dataset whose <SlaveDevices>/<ManagedModbusRequest> nodes hold the
-    Modbus scan lines (request read/write addresses, lengths, connection
-    numbers, IO item names) — edit it and write back with set_dtm_dataset."""
+    """Export a slave DTM's configuration dataset for INSPECTION. The payload is
+    a binary-framed FDT container (UTF-16 XML wrapped in length/GUID/type bytes),
+    so the returned 'xml' has the framing stripped for reading and is NOT
+    byte-faithful — do not edit it and write it back via set_dtm_dataset (the
+    response carries a 'note' saying so). For M580 Modbus scan lines, use
+    get_master_dtm_dataset / set_master_dtm_dataset instead."""
     return ce.get_dtm_dataset(name)
 
 
@@ -674,11 +893,28 @@ def set_network_ip(name: str, ip_address: str, subnet_mask: str, gateway: str) -
 
 
 @mcp.tool()
-def show_ui(state: str = "show_normal") -> dict:
+def show_ui(state: str = "show_normal", mode: str = "read_only", command_line: str = "") -> dict:
     """Make the Control Expert window of this automation session visible so a
-    human can watch or take over. state: show_normal, show_maximized,
-    minimize, restore."""
-    return ce.show_ui(state)
+    human can watch the AI work or take over. state: show_normal,
+    show_maximized, minimize, restore.
+
+    mode: 'read_only' (default — the GUI follows along while this client keeps
+    the write token; required for opening editors) or 'read_write' (hand the
+    GUI full control; only works if this client does not hold write access).
+    command_line: optional Control Expert command line to open specific editors
+    on startup."""
+    return ce.show_ui(state, mode, command_line)
+
+
+@mcp.tool()
+def open_animation_table(name: str, state: str = "show_normal") -> dict:
+    """Open an existing animation table's editor inside the live Control Expert
+    window, so a human watches values update in real time while the AI drives a
+    test. Typical live-test flow: create_animation_table -> start_simulator ->
+    plc_connect -> plc_transfer -> plc_command('run') -> open_animation_table.
+    The GUI opens read-only (this client keeps write); the table animates live
+    once connected to the simulator/PLC."""
+    return ce.open_animation_table(name, state)
 
 
 # ----------------------------------------------------------------- online
@@ -719,6 +955,80 @@ if ONLINE_ENABLED:
         """Send a run/stop/init command to the connected PLC. DANGEROUS:
         starting or stopping a live controller affects the physical process."""
         return ce.plc_command(command)
+
+    # ------------------------------------- live values over Modbus TCP
+
+    @mcp.tool()
+    def modbus_connect(host: str, port: int = 502, unit: int = 1, word_order: str = "low_first") -> dict:
+        """Open a Modbus TCP link to a Modicon CPU's embedded server for live
+        read/write of LOCATED tags (%M / %MW) while the PLC runs — the channel
+        SCADA uses, and the only way this server reads/writes live values (the
+        UDE/COM API cannot).
+
+        Only located tags work: unlocated DFB internals (e.g. Pump1.Running)
+        must be mirrored to a %MW/%M address in the program first. word_order is
+        for 32-bit REAL/DINT: 'low_first' (Schneider default) or 'high_first'.
+        Works against the SIMULATOR (host='127.0.0.1', the endpoint a Vijeo
+        Designer I/O scanner reaches) as well as a real CPU IP; port 502."""
+        return mb.connect(host, port, unit, word_order)
+
+    @mcp.tool()
+    def modbus_disconnect() -> dict:
+        """Close the Modbus TCP connection."""
+        return mb.disconnect()
+
+    @mcp.tool()
+    def modbus_status() -> dict:
+        """Report the Modbus TCP connection state and decode settings."""
+        return mb.status()
+
+    @mcp.tool()
+    def read_tags(tags: str) -> dict:
+        """Read live values of located tags over Modbus TCP (modbus_connect
+        first). tags is a comma-separated list; each item is a global variable
+        name (its %address and IEC type are looked up from the project) or an
+        explicit address '%MW70' / '%M3' / '%MW10.2', optionally typed
+        '%MW2:REAL' or '%MW70:UDINT' (default INT for %MW, BOOL for %M).
+        Returns {values:{tag:value}} and any per-tag errors."""
+        plan = _build_tag_plan(tags.split(","))
+        values, errors = {}, {}
+        for label, addr, typ in plan:
+            if not addr:
+                errors[label] = "no located %M/%MW address (unknown name or unlocated tag)"
+                continue
+            try:
+                values[label] = mb.read_one(addr, typ)
+            except ModbusError as exc:
+                errors[label] = str(exc)
+        out: dict = {"values": values}
+        if errors:
+            out["errors"] = errors
+        return out
+
+    @mcp.tool()
+    def write_tags(values: dict) -> dict:
+        """Write live values to located tags over Modbus TCP (modbus_connect
+        first). DANGEROUS — changes a running controller's process.
+
+        values maps each tag (a global variable name, or an address like
+        '%MW86' / '%M0' / '%MW2:REAL') to the value to write. Booleans go to %M
+        coils or %MWi.j bits; numbers to %MW (INT, 1 word) or two %MW words
+        (REAL/DINT/UDINT). Returns {written:{tag:value}} and any per-tag errors."""
+        plan = _build_tag_plan(list(values.keys()))
+        written, errors = {}, {}
+        for label, addr, typ in plan:
+            if not addr:
+                errors[label] = "no located %M/%MW address (unknown name or unlocated tag)"
+                continue
+            try:
+                mb.write_one(addr, typ, values[label])
+                written[label] = values[label]
+            except ModbusError as exc:
+                errors[label] = str(exc)
+        out: dict = {"written": written}
+        if errors:
+            out["errors"] = errors
+        return out
 
 
 def main() -> None:

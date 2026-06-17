@@ -67,25 +67,49 @@ RunLamp := Motor;
 LD_GUIDE = """\
 LD (Ladder) — line/cell model
 =============================
-<LDSource nbColumns="11"> contains <networkLD> with <typeLine> rows of 11
-cells. Elements consume cells left to right:
-- <contact typeContact="..." contactVariableName="Var"/> — 1 cell.
-  Types: openContact (-| |-), closedContact (-|/|-), PContact (rising edge,
-  variable must be EBOOL), NContact (falling edge).
-- <HLink nbCells="N"/> — horizontal wire over N cells.
-- <shortCircuit><VLink/><HLink nbCells="N"/></shortCircuit> — horizontal wire
-  with a vertical link to the NEXT typeLine at the wire's end column (used to
-  fan one rung out to several coils, or to merge parallel branches).
-- <emptyCell nbCells="N"/> — skip N unconnected cells.
-- <coil typeCoil="..." coilVariableName="Var"/> — put in the LAST column.
-  Types: coil, notCoil, setCoil, resetCoil, PCoil, NCoil, callCoil, haltCoil,
-  jumpCoil, retCoil.
-- <emptyLine nbRows="N"/> — vertical spacing between rungs.
-- FFB blocks, <compareBlock> (with <FFBExpression>) and <operateBlock> (with
-  <statement>) can also be placed in lines for compares/assignments.
-A contact row of C used cells needs HLink nbCells = 10 - C to reach the coil
-column. Keep one logical rung per typeLine group; separate rungs with
-emptyLine.
+<LDSource nbColumns="11"> (11..64) contains <networkLD> of <typeLine> rows.
+CELL LAW: every <typeLine> must account for ALL nbColumns cells — the elements'
+cell-spans sum to nbColumns (11 by default). The output (coil / control /
+operateBlock) ends at the LAST column. Separate rungs with an empty line:
+<typeLine><emptyLine nbRows="1"></emptyLine></typeLine>.
+
+Contacts (1 cell each): <contact typeContact="X" contactVariableName="V"/>
+  X = openContact (-| |-), closedContact (-|/|-), PContact (rising edge),
+  NContact (falling edge). PContact/NContact REQUIRE V to be EBOOL (edge memory).
+Links / spacing:
+  <HLink nbCells="N"/> horizontal wire; <VLink/> vertical; <emptyCell nbCells="N"/>;
+  <shortCircuit><VLink/><HLink nbCells="N"/></shortCircuit> = a ONE-row vertical
+  link (fan one rung out to several coils, or merge a parallel branch); span more
+  rows by placing consecutive <VLink/> cells below it.
+Coils (LAST column): <coil typeCoil="X" coilVariableName="V"/>
+  X = coil, notCoil, setCoil, resetCoil, PCoil, NCoil, callCoil, haltCoil.
+  PCoil/NCoil REQUIRE V to be EBOOL.
+Control (NOT coils — own element, LAST column):
+  <control typeControl="jumpCoil" label="L"/> jumps to a label;
+  <control typeControl="retCoil"/> returns from a subroutine (SR).
+Jump target: <labelCell label="L"/> must sit ALONE on its own <typeLine>
+  (pad it: <labelCell label="L"/><emptyCell nbCells="10"/>); the target rung is
+  the NEXT line, connected to the left rail.
+Inline blocks (span 'width' cells; hold ST text):
+  <compareBlock width="W"><expression>Level &gt;= 50</expression></compareBlock>
+    — a framed boolean test, used on the INPUT side like a contact.
+  <operateBlock width="W"><statement>Output := Level * 2;</statement></operateBlock>
+    — a framed assignment, used on the OUTPUT side like a coil.
+  <FFBBlock .../> — an EF/EFB/DFB in a rung. Binding rules (if you must): leave
+    boolean flow pins UNBOUND (binding EN errors E1228); bind data pins via
+    effectiveParameter. BUT hand-authoring an FFB inside LD via XML is NOT
+    reliable: the block's pin columns use a MIXED scale (width is in FBD units,
+    position in LD cells), so the GUI auto-lays-out the pin coordinates and the
+    connecting links — XML import needs pixel-accurate pin alignment and
+    typically fails with E1217/E1218 (pins not connected to the rails).
+    TO PLACE A DFB IN LADDER: use the place_fb_in_ladder tool — it generates the
+    correct geometry automatically (NO template needed) by reading the DFB's pin
+    interface, sizing the block (height = max(in,out)+1), wiring one boolean
+    input on its pin-row to the rail and binding the rest. For elementary EFBs
+    (TON/CTU/…) author them in FBD, or clone a GUI template with use_fb_in_ladder.
+    Everything else in LD above (contacts, all coils, control/jump+label,
+    compare/operate blocks, parallel branches) IS reliably hand-authored and
+    build-validated.
 """
 
 LD_EXAMPLE = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -98,34 +122,62 @@ LD_EXAMPLE = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 \t\t\t<networkLD>
 \t\t\t\t<typeLine>
 \t\t\t\t\t<contact typeContact="openContact" contactVariableName="StartPB"></contact>
-\t\t\t\t\t<contact typeContact="closedContact" contactVariableName="StopPB"></contact>
-\t\t\t\t\t<shortCircuit>
-\t\t\t\t\t\t<VLink></VLink>
-\t\t\t\t\t\t<HLink nbCells="8"></HLink>
-\t\t\t\t\t</shortCircuit>
+\t\t\t\t\t<contact typeContact="closedContact" contactVariableName="EStop"></contact>
+\t\t\t\t\t<contact typeContact="PContact" contactVariableName="JogBtn"></contact>
+\t\t\t\t\t<HLink nbCells="7"></HLink>
 \t\t\t\t\t<coil typeCoil="setCoil" coilVariableName="Motor"></coil>
 \t\t\t\t</typeLine>
+\t\t\t\t<typeLine><emptyLine nbRows="1"></emptyLine></typeLine>
 \t\t\t\t<typeLine>
-\t\t\t\t\t<emptyCell nbCells="10"></emptyCell>
-\t\t\t\t\t<coil typeCoil="resetCoil" coilVariableName="IdleLamp"></coil>
-\t\t\t\t</typeLine>
-\t\t\t\t<typeLine>
-\t\t\t\t\t<emptyLine nbRows="1"></emptyLine>
-\t\t\t\t</typeLine>
-\t\t\t\t<typeLine>
-\t\t\t\t\t<contact typeContact="openContact" contactVariableName="Motor"></contact>
+\t\t\t\t\t<contact typeContact="NContact" contactVariableName="Trip"></contact>
 \t\t\t\t\t<HLink nbCells="9"></HLink>
-\t\t\t\t\t<coil typeCoil="coil" coilVariableName="RunLamp"></coil>
+\t\t\t\t\t<coil typeCoil="notCoil" coilVariableName="Alarm"></coil>
+\t\t\t\t</typeLine>
+\t\t\t\t<typeLine><emptyLine nbRows="1"></emptyLine></typeLine>
+\t\t\t\t<typeLine>
+\t\t\t\t\t<compareBlock width="4"><expression>Level &gt;= 50</expression></compareBlock>
+\t\t\t\t\t<HLink nbCells="6"></HLink>
+\t\t\t\t\t<coil typeCoil="coil" coilVariableName="HighLevel"></coil>
+\t\t\t\t</typeLine>
+\t\t\t\t<typeLine><emptyLine nbRows="1"></emptyLine></typeLine>
+\t\t\t\t<typeLine>
+\t\t\t\t\t<contact typeContact="openContact" contactVariableName="Enable"></contact>
+\t\t\t\t\t<HLink nbCells="6"></HLink>
+\t\t\t\t\t<operateBlock width="4"><statement>Output := Level * 2;</statement></operateBlock>
+\t\t\t\t</typeLine>
+\t\t\t\t<typeLine><emptyLine nbRows="1"></emptyLine></typeLine>
+\t\t\t\t<typeLine>
+\t\t\t\t\t<contact typeContact="openContact" contactVariableName="SkipFlag"></contact>
+\t\t\t\t\t<HLink nbCells="9"></HLink>
+\t\t\t\t\t<control typeControl="jumpCoil" label="SKIP"></control>
+\t\t\t\t</typeLine>
+\t\t\t\t<typeLine><emptyLine nbRows="1"></emptyLine></typeLine>
+\t\t\t\t<typeLine>
+\t\t\t\t\t<labelCell label="SKIP"></labelCell>
+\t\t\t\t\t<emptyCell nbCells="10"></emptyCell>
+\t\t\t\t</typeLine>
+\t\t\t\t<typeLine>
+\t\t\t\t\t<contact typeContact="openContact" contactVariableName="RunReq"></contact>
+\t\t\t\t\t<HLink nbCells="9"></HLink>
+\t\t\t\t\t<coil typeCoil="coil" coilVariableName="RunOut"></coil>
 \t\t\t\t</typeLine>
 \t\t\t</networkLD>
 \t\t</LDSource>
 \t</program>
 \t<dataBlock>
 \t\t<variables name="StartPB" typeName="BOOL"></variables>
-\t\t<variables name="StopPB" typeName="BOOL"></variables>
+\t\t<variables name="EStop" typeName="BOOL"></variables>
+\t\t<variables name="JogBtn" typeName="EBOOL"></variables>
 \t\t<variables name="Motor" typeName="BOOL"></variables>
-\t\t<variables name="IdleLamp" typeName="BOOL"></variables>
-\t\t<variables name="RunLamp" typeName="BOOL"></variables>
+\t\t<variables name="Trip" typeName="EBOOL"></variables>
+\t\t<variables name="Alarm" typeName="BOOL"></variables>
+\t\t<variables name="Level" typeName="INT"></variables>
+\t\t<variables name="HighLevel" typeName="BOOL"></variables>
+\t\t<variables name="Enable" typeName="BOOL"></variables>
+\t\t<variables name="Output" typeName="INT"></variables>
+\t\t<variables name="SkipFlag" typeName="BOOL"></variables>
+\t\t<variables name="RunReq" typeName="BOOL"></variables>
+\t\t<variables name="RunOut" typeName="BOOL"></variables>
 \t</dataBlock>
 </LDExchangeFile>
 """
@@ -156,6 +208,16 @@ FBD (Function Block Diagram) — blocks + links on a grid
   Optional <gridObjPosition> waypoints route bends.
 - Leave 3+ columns between blocks; place blocks at increasing posX in
   execution order (left to right).
+More network elements (all live directly inside <networkFBD>):
+- <textBox width="W" height="H">Comment text<objPosition posX=".." posY=".."/>
+  </textBox> — a free comment box. NOTE its coordinates use a FINER pixel-ish
+  scale than the block grid (e.g. posX 20/150, not 3) — don't use the pin
+  formula for it. A block may also carry its own <comment>..</comment> child.
+- Control flow: <labelObject label="L"><objPosition .../></labelObject> as a jump
+  target; <jumpObject label="L"><objPosition .../></jumpObject> to jump to it;
+  <returnObject><objPosition .../></returnObject> to return from a subroutine.
+- Named connectors instead of a drawn wire: on <linkFB> set
+  connectorVisible="true" connectorText="Name" to label a long link.
 """
 
 FBD_EXAMPLE = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -166,6 +228,8 @@ FBD_EXAMPLE = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 \t\t<identProgram name="FBD_Demo" type="section" task="MAST"></identProgram>
 \t\t<FBDSource nbRows="24" nbColumns="36">
 \t\t\t<networkFBD>
+\t\t\t\t<textBox width="220" height="15">Pump start interlock: ready AND NOT fault<objPosition posX="20" posY="2"></objPosition></textBox>
+\t\t\t\t<textBox width="160" height="15">3 s on-delay before run<objPosition posX="150" posY="2"></objPosition></textBox>
 \t\t\t\t<FFBBlock instanceName=".1" typeName="AND_BOOL" additionnalPinNumber="0" enEnO="false" width="8" height="6">
 \t\t\t\t\t<objPosition posX="3" posY="3"></objPosition>
 \t\t\t\t\t<descriptionFFB execAfter="">
