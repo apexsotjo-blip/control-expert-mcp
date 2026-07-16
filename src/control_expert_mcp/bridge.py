@@ -26,7 +26,11 @@ from . import constants as C
 
 log = logging.getLogger(__name__)
 
-BROKER_PROGID = "PSBroker.PServerBroker.1"
+# Override to drive an OEM Control Expert instead - e.g. the RemoteConnect
+# SCADAPack x70 Logic Editor (UnitySoControl 16.2), which registers its own
+# automation broker on machines where RemoteConnect is installed.
+BROKER_PROGID = os.environ.get("CE_MCP_BROKER_PROGID",
+                               "PSBroker.PServerBroker.1")
 
 # Inline-return guard: exports bigger than this are left on disk instead
 MAX_INLINE_BYTES = 400_000
@@ -338,6 +342,64 @@ class ControlExpertBridge:
         self._project_path = None
         proj = self._project(write=False)
         return {"created": True, "project": self._project_info(proj)}
+
+    def new_logic_editor_project(
+        self, platform: str, xpdf_context: str, settings_xso: str | None,
+    ) -> dict:
+        """Create a SCADAPack x70 RemoteConnect Logic Editor project.
+
+        The Logic Editor is an OEM Control Expert served by the SAME broker;
+        it is selected by handing NewApplicationWithPServerBrokerContext a
+        context whose XpdfContext is the SCADAPack x70 DTM's xpdf resource
+        (see ddt_mirror.codegen.logic_project for how that text is obtained).
+        `platform` is a catalog family name: SCADAPack47x / SCADAPack57x /
+        SCADAPack1070 (the installed UnityScadaPack product must carry that
+        family's catalog). Everything afterwards — import_xml, write_st_logic,
+        save_project, build_project — works on the resulting app exactly as
+        for a normal Control Expert project."""
+        return self._run(self._do_new_logic_editor_project, platform,
+                         xpdf_context, settings_xso)
+
+    def _do_new_logic_editor_project(self, platform, xpdf_context,
+                                     settings_xso) -> dict:
+        import win32com.client
+
+        self._do_close(False)
+        broker = self._broker()
+        ctx = win32com.client.Dispatch("PServerBroker.PServerBrokerContext.1")
+        ctx.XpdfContext = xpdf_context
+        # [out] ppApp is mapped to the return value by pywin32.
+        self._app = broker.NewApplicationWithPServerBrokerContext(ctx)
+        if settings_xso:
+            xso_path = self._temp_path(".xso")
+            with open(xso_path, "w", encoding="utf-8") as fh:
+                fh.write(settings_xso)
+            try:
+                self._app.SetProjectSettingsTemplate(xso_path)
+            except Exception:
+                pass  # non-fatal: only seeds default project settings
+            finally:
+                try:
+                    os.remove(xso_path)
+                except OSError:
+                    pass
+        try:
+            self._app.NewProject("Project", platform, "01.00")
+        except Exception as exc:
+            err = _format_com_error(exc)
+            self._do_close(False)
+            raise CEError(
+                f"Logic Editor NewProject failed for platform '{platform}': "
+                f"{err}. 'Catalog object not found' means the installed "
+                "UnityScadaPack product does not carry that SCADAPack family's "
+                "catalog — install the matching RemoteConnect/UnityScadaPack "
+                "variant, or choose the platform your product supports "
+                "(SCADAPack47x / SCADAPack57x / SCADAPack1070)."
+            ) from exc
+        self._project_path = None
+        proj = self._project(write=False)
+        return {"created": True, "platform": platform,
+                "project": self._project_info(proj)}
 
     def save_project(self, path: str | None) -> dict:
         return self._run(self._do_save_project, path)
