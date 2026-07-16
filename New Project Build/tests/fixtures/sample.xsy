@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<VariablesExchangeFile>
+	<fileHeader company="Schneider Automation" product="Control Expert V14.0 - 190112" dateTime="date_and_time#2026-7-14-12:0:0" content="Variables source file" DTDVersion="41"></fileHeader>
+	<contentHeader name="FixtureProject" version="0.0.1"></contentHeader>
+	<DDTSource DDTName="CTRL_T">
+		<structure>
+			<variables name="Man_SP" typeName="REAL">
+				<comment>Manual setpoint</comment>
+			</variables>
+			<variables name="Mode" typeName="INT"></variables>
+		</structure>
+	</DDTSource>
+	<DDTSource DDTName="PUMP_T">
+		<structure>
+			<variables name="Cmd" typeName="BOOL">
+				<comment>Start command</comment>
+			</variables>
+			<variables name="Running" typeName="BOOL"></variables>
+			<variables name="Flow_PV" typeName="REAL"></variables>
+			<variables name="Ctrl" typeName="CTRL_T"></variables>
+			<variables name="Log" typeName="ARRAY[0..9] OF INT"></variables>
+		</structure>
+	</DDTSource>
+	<dataBlock>
+		<variables name="Pump1" typeName="PUMP_T">
+			<comment>Feed pump</comment>
+		</variables>
+		<variables name="Pump2" typeName="PUMP_T"></variables>
+		<variables name="Line_Speed" typeName="INT">
+			<comment>Line speed</comment>
+		</variables>
+		<variables name="E_Stop" typeName="BOOL"></variables>
+		<variables name="Located_Speed" typeName="INT" topologicalAddress="%MW50"></variables>
+		<variables name="Tank_Level" typeName="REAL"></variables>
+		<variables name="Recipe_Name" typeName="STRING[16]"></variables>
+		<variables name="Mixer" typeName="SOME_DFB"></variables>
+	</dataBlock>
+</VariablesExchangeFile>
