@@ -61,6 +61,25 @@ Arrays, STRING, DATE/TOD are not supported yet (skipped with warnings).
 regenerating never moves an existing address, so HMI screens keep working.
 Deselected tags keep their (tombstoned) address and revive on reselect.
 
+## Upgrades on site backups (brownfield adoption)
+
+Opening a project that was not produced by this app is safe by design:
+
+- **Reserved-usage floor:** on open, the app scans every located `%M`/`%MW`/
+  `%MD`/`%MF` variable *and every address literal inside logic code*, and
+  allocates all new mirrors above the highest address in use — hand-written
+  site addressing is never collided with. (Our own artifacts are excluded
+  from the scan so regeneration doesn't ratchet the floor.)
+- **Sidecar recovery:** if the sidecar `.json` is missing (typical for a
+  site backup) but the project contains a generated mirror section, the
+  address map is reconstructed from the project itself — every copy line is
+  a tag↔address pair, mirror variables carry their `HMI mirror of <path>`
+  comment, and Read / Read-Write directions are re-derived from the copy
+  direction and saved as per-variable overrides. The recovered types are
+  reselected automatically; review member selection before generating
+  (tombstoned/dead slots are not recoverable, but their addresses are still
+  never reused thanks to the usage floor).
+
 ## SCADAPack RTU → RemoteConnect
 
 SCADAPack x70 RTUs are programmed in the RemoteConnect Logic Editor (a

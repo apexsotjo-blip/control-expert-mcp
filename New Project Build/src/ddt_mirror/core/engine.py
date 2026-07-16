@@ -15,13 +15,17 @@ from typing import Callable
 
 from .. import __version__
 from .access import apply_access
+from .adopt import (
+    MIRROR_COMMENT_PREFIX, GeneratedSection, ReservedUsage,
+    find_generated_sections, scan_reserved,
+)
 from .allocator import AllocState, allocate
 from .csvmap import generate_csv
 from .flatten import flatten_tags
 from .model import DdtType, FlatLeaf, MirrorPlan, Tag
 from .persist import SidecarState, save_sidecar
 from .stgen import CE_MAX_IDENT, generate_st, mirror_var_name
-from .xsy_parser import load_project_variables
+from .xsy_parser import fetch_export_xml, load_project_variables
 
 Progress = Callable[[str], None]
 
@@ -32,6 +36,9 @@ class ProjectData:
     tags: list[Tag] = field(default_factory=list)
     leaves: list[FlatLeaf] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    # brownfield safety: existing address usage + our generated sections
+    reserved: ReservedUsage = field(default_factory=ReservedUsage)
+    generated_sections: list[GeneratedSection] = field(default_factory=list)
 
 
 @dataclass
@@ -49,10 +56,28 @@ class ApplyReport:
 
 
 def scan_project(bridge) -> ProjectData:
-    """Fetch + flatten everything from the currently open CE project."""
+    """Fetch + flatten everything from the currently open CE project,
+    including existing %M/%MW usage (brownfield collision floor) and any
+    previously generated mirror sections (sidecar recovery input)."""
     types, tags = load_project_variables(bridge)
-    leaves, warnings = flatten_tags(tags, types)
-    return ProjectData(types=types, tags=tags, leaves=leaves, warnings=warnings)
+    # our own mirror variables are not candidate tags (but stay in `tags`
+    # for the recovery path, which resolves them by their comment marker)
+    own = [t for t in tags if not t.comment.startswith(MIRROR_COMMENT_PREFIX)]
+    leaves, warnings = flatten_tags(own, types)
+    data = ProjectData(types=types, tags=tags, leaves=leaves,
+                       warnings=warnings)
+    try:
+        program_xml = fetch_export_xml(bridge, "program")
+    except Exception as exc:  # empty program / export refused
+        program_xml = None
+        data.warnings.append(
+            f"program export failed ({exc}) - existing %M/%MW literals in "
+            "logic code could not be scanned; located variables still raise "
+            "the allocation floor")
+    data.generated_sections = find_generated_sections(program_xml)
+    data.reserved = scan_reserved(
+        tags, program_xml, {s.name for s in data.generated_sections})
+    return data
 
 
 def type_summary(data: ProjectData) -> list[dict]:
@@ -104,9 +129,17 @@ def build_plan(
     alloc = copy.deepcopy(state.alloc)
     alloc.base_bit = state.settings.base_bit
     alloc.base_word = state.settings.base_word
-    assignments = allocate(alloc, selected)
+    assignments = allocate(alloc, selected,
+                           bit_floor=data.reserved.bit_floor,
+                           word_floor=data.reserved.word_floor)
 
     plan = MirrorPlan(assignments=assignments, warnings=list(data.warnings))
+    if data.reserved.max_bit >= 0 or data.reserved.max_word >= 0:
+        plan.warnings.append(
+            f"project already uses %M up to {data.reserved.max_bit} and %MW "
+            f"up to {data.reserved.max_word} ({data.reserved.n_located} "
+            f"located variables, {data.reserved.n_literals} code literals) - "
+            "new mirrors are allocated above that")
 
     used_names: dict[str, str] = {}
     for a in assignments:

@@ -17,8 +17,8 @@ from PySide6.QtWidgets import (
 )
 
 from .. import __version__
+from ..core.adopt import load_or_recover_sidecar
 from ..core.engine import build_plan, type_summary
-from ..core.persist import load_sidecar
 from .tree import (
     AccessDelegate, COL_ACCESS, COL_ADDRESS, build_member_model,
     collect_deselected, wire_check_propagation,
@@ -120,7 +120,7 @@ class MainWindow(QMainWindow):
 
         self.data = data
         self.project_path = path
-        self.state = load_sidecar(path)
+        self.state, recovery_report = load_or_recover_sidecar(path, data)
         applied = apply_library(load_library(), data, self.state)
         self.open_btn.setEnabled(True)
         self.open_status.setText("")
@@ -131,6 +131,9 @@ class MainWindow(QMainWindow):
             shown = ", ".join(applied[:6]) + (" ..." if len(applied) > 6 else "")
             msg += f"  Applied saved R/W defaults for: {shown}"
         self.statusBar().showMessage(msg)
+        if recovery_report:
+            QMessageBox.information(
+                self, "Address map recovered", "\n".join(recovery_report))
 
     # --------------------------------------------------------- page 1: types
 

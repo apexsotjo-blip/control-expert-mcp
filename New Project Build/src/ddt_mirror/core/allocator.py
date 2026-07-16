@@ -82,12 +82,24 @@ def premapped_address(leaf: FlatLeaf) -> str | None:
     return f"%{m.group(1).upper()}{m.group(2)}" if m else None
 
 
-def allocate(state: AllocState, selected: list[FlatLeaf]) -> list[Assignment]:
-    """Assign addresses to the selected leaves, mutating state append-only."""
+def allocate(
+    state: AllocState,
+    selected: list[FlatLeaf],
+    bit_floor: int = 0,
+    word_floor: int = 0,
+) -> list[Assignment]:
+    """Assign addresses to the selected leaves, mutating state append-only.
+
+    `bit_floor`/`word_floor` raise the starting point for NEW slots above
+    addresses the project already uses elsewhere (located variables and
+    code literals — brownfield safety). Existing entries are never moved.
+    """
     if state.next_bit is None:
         state.next_bit = state.base_bit
     if state.next_word is None:
         state.next_word = state.base_word
+    state.next_bit = max(state.next_bit, bit_floor)
+    state.next_word = max(state.next_word, word_floor)
 
     assignments: list[Assignment] = []
     selected_keys = set()

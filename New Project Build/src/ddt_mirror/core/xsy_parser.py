@@ -62,13 +62,13 @@ def parse_xsy(xml_text: str) -> tuple[dict[str, DdtType], list[Tag]]:
     return types, tags
 
 
-def fetch_variables_xml(bridge) -> str:
-    """The open project's variables export (.xsy) as text.
+def fetch_export_xml(bridge, kind: str) -> str:
+    """A project export ('variables', 'program', ...) as text.
 
     Handles both export_xml return shapes: inline xml, or a temp-file path
     when the export exceeds the bridge's inline size limit (400 KB).
     """
-    result = bridge.export_xml("variables", None, None)
+    result = bridge.export_xml(kind, None, None)
     if result.get("too_large_inline"):
         with open(result["file"], "r", encoding="utf-8-sig", errors="replace") as fh:
             xml_text = fh.read()
@@ -78,6 +78,11 @@ def fetch_variables_xml(bridge) -> str:
             pass
         return xml_text
     return result["xml"]
+
+
+def fetch_variables_xml(bridge) -> str:
+    """The open project's variables export (.xsy) as text."""
+    return fetch_export_xml(bridge, "variables")
 
 
 def load_project_variables(bridge) -> tuple[dict[str, DdtType], list[Tag]]:
