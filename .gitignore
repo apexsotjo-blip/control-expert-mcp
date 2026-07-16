@@ -19,6 +19,20 @@ dist/
 
 # Proprietary / customer data — NEVER commit
 # (real project exports learned via the read tools during the recreation test)
+New Project Data/
+New Project Build/HMI_SAMPLES/
+New Project Build/P24-IWT-03-SCADAPack_*/
+New Project Build/RC_STU_PROBES/
+remoteconnect.xls
+RC_PROBE_import.xls
+*_ImportLog.txt
+
+# Third-party tooling — never commit (unlicensed binaries)
+Modbus Poll/
+
+# Local scratch notes
+pending.txt
+
 tools/bigtest/ref/
 tools/bigtest/weaknesses.jsonl
 tools/bigtest/settings_to_apply.json
