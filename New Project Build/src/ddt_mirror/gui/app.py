@@ -682,8 +682,11 @@ class MainWindow(QMainWindow):
                f"{t2_report.new_blocks} scan blocks, "
                f"{t2_report.new_bindings} register bindings on device "
                f"'{t2_report.device}')\n"
-               f"  2. {t2_report.map_path}\n\n"
-               "In RemoteConnect:\n"
+               f"  2. {t2_report.map_path}\n")
+        if t2_report.geoscada_path:
+            msg += (f"  3. {t2_report.geoscada_path}\n"
+                    "     (DNP3 point list for the Geo SCADA engineer)\n")
+        msg += ("\nIn RemoteConnect:\n"
                "  1. Import the .xls (full configuration plus the new "
                "objects and scanner blocks).\n"
                "  2. Write the RTU configuration to the device - the "
@@ -713,6 +716,9 @@ class MainWindow(QMainWindow):
                "removed)\n"
                f"  5. {report.sections_dir}\\ "
                f"({len(report.section_files)} section files)\n")
+        if rc.geoscada_path:
+            msg += (f"  6. {rc.geoscada_path}\n"
+                    "     (DNP3 point list for the Geo SCADA engineer)\n")
         msg += ("\nIn RemoteConnect:\n"
                 "  1. Import the .xls (your full configuration plus the "
                 "new objects).\n"

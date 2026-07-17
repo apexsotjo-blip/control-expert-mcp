@@ -189,6 +189,17 @@ new blocks, existing bindings/objects are never duplicated. Limits (both
 warned): 32-bit leaves are skipped (32-bit scan enum unprobed); BOOLs are
 served as Analog 0/1 objects (native Digital-on-bit binding unprobed).
 
+## GeoSCADA (DNP3 point list)
+
+Every RTU generate (both modes) also writes
+`<project>_GeoSCADA_dnp3_points.csv` when DNP3 points were allocated:
+one row per point with the outstation's DNP3 address (read from the
+export's Parameters sheet), group/variation, point number, and the
+Geo SCADA point class to build (g1→Binary Input, g20→Counter,
+g30→Analog Input, g40→Analog Output/setpoint). It is a point list for
+bulk creation — not a native Geo SCADA import file (no verified sample
+of that format yet; contributions welcome).
+
 ## Vijeo side (one-time equipment setup)
 
 - IO Manager → ModbusTCPIP equipment → enable **IEC61131 syntax**,

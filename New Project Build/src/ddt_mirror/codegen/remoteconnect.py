@@ -39,7 +39,9 @@ from ..core.rtu import (
 
 OBJECTS_SHEET = "(2) Objects"
 PROJECT_SETTINGS_SHEET = "(1) Project Settings"
+PARAMETERS_SHEET = "(19) Parameters"
 _DEVICE_TYPE_ID = "RtuProjectSettingsDeviceType"
+_DNP3_ADDRESS_ID = "RtuSettingsBasicGeneralRtuDnpAddress"
 
 # Objects sheet columns (fixed layout of the v3.0 export)
 COL_ENABLE = 0
@@ -116,6 +118,7 @@ class WorkbookIndex:
     max_seq: int = -1
     n_objects: int = 0
     device_type: str = ""  # RC 'Device Type' label, e.g. 'SCADAPack 474 <61>'
+    dnp3_address: object = ""  # the RTU's own DNP3 outstation address
 
     def foreign_points(self, ours: set[str]) -> dict[str, set[int]]:
         out: dict[str, set[int]] = {}
@@ -186,6 +189,15 @@ def read_workbook_index(path: str) -> WorkbookIndex:
         for r in range(ps.nrows):
             if str(_cell(ps, r, 0)).strip() == _DEVICE_TYPE_ID:
                 idx.device_type = str(_cell(ps, r, 2)).strip()
+                break
+    if PARAMETERS_SHEET in book.sheet_names():
+        ps = book.sheet_by_name(PARAMETERS_SHEET)
+        for r in range(ps.nrows):
+            if str(_cell(ps, r, 0)).strip() == _DNP3_ADDRESS_ID:
+                v = _cell(ps, r, 2)
+                if isinstance(v, float) and v.is_integer():
+                    v = int(v)
+                idx.dnp3_address = v
                 break
     book.release_resources()
     return idx
@@ -311,6 +323,7 @@ class RcReport:
     xls_path: str = ""
     st_path: str = ""
     map_path: str = ""
+    geoscada_path: str = ""  # DNP3 point list for the SCADA engineer
     sidecar_path: str = ""
     created: int = 0
     existing: int = 0
@@ -425,6 +438,15 @@ def export_remoteconnect(
     with open(report.map_path, "w", encoding="utf-8-sig", newline="") as fh:
         fh.write(generate_map_csv(assignments, new_names,
                                   state.settings.hmi_index_base))
+
+    if any(a.entry.dnp3_point is not None for a in assignments):
+        from .geoscada import generate_geoscada_csv
+
+        report.geoscada_path = os.path.join(
+            out_dir, f"{stem}_GeoSCADA_dnp3_points.csv")
+        with open(report.geoscada_path, "w", encoding="utf-8-sig",
+                  newline="") as fh:
+            fh.write(generate_geoscada_csv(assignments, idx.dnp3_address))
 
     state.rtu = rtu
     report.sidecar_path = save_sidecar(project_path, state)

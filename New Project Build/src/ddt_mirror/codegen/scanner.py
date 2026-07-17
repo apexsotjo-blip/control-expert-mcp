@@ -214,6 +214,7 @@ class T2Report:
     ok: bool = False
     xls_path: str = ""
     map_path: str = ""
+    geoscada_path: str = ""  # DNP3 point list for the SCADA engineer
     device: str = ""
     created_objects: int = 0
     existing_objects: int = 0
@@ -241,6 +242,8 @@ def generate_t2_map_csv(rows: list[dict]) -> str:
 class T2Plan:
     device: ScanDevice | None = None
     rtu: object = None              # RtuAllocState copy to commit
+    assignments: list = field(default_factory=list)  # RtuAssignment
+    dnp3_address: object = ""       # the RTU's DNP3 outstation address
     obj_rows: list[dict] = field(default_factory=list)
     new_blocks: list[ScanBlock] = field(default_factory=list)
     bind_rows: list[dict] = field(default_factory=list)
@@ -294,6 +297,8 @@ def plan_scanner(
         foreign_registers=idx.foreign_registers(ours),
         spec_fn=scanner_spec)
     plan.rtu = rtu
+    plan.assignments = assignments
+    plan.dnp3_address = idx.dnp3_address
     plan.warnings = list(data.warnings) + warnings + plan.warnings
 
     # objects to append + sequence ids (existing keep theirs, new get fresh)
@@ -414,6 +419,16 @@ def export_scanner_bundle(
     })
     with open(report.map_path, "w", encoding="utf-8-sig", newline="") as fh:
         fh.write(generate_t2_map_csv(plan.map_rows))
+
+    if any(a.entry.dnp3_point is not None for a in plan.assignments):
+        from .geoscada import generate_geoscada_csv
+
+        report.geoscada_path = os.path.join(
+            out_dir, f"{stem}_GeoSCADA_dnp3_points.csv")
+        with open(report.geoscada_path, "w", encoding="utf-8-sig",
+                  newline="") as fh:
+            fh.write(generate_geoscada_csv(plan.assignments,
+                                           plan.dnp3_address))
 
     state.rtu = plan.rtu
     report.sidecar_path = save_sidecar(project_path, state)
