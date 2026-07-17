@@ -29,8 +29,10 @@ from ..core.adopt import load_or_recover_sidecar
 from ..core.engine import build_plan, type_summary
 from .theme import GREEN, ORANGE, RED, apply_theme
 from .tree import (
-    AccessDelegate, COL_ACCESS, COL_ADDRESS, COL_MEMBER,
-    build_member_model, collect_deselected, wire_check_propagation,
+    AccessDelegate, COL_ACCESS, COL_ADDRESS, COL_COMMENT, COL_MEMBER,
+    LEAF_ROLE, build_member_model, build_type_model, bulk_set_access,
+    bulk_set_checked, collect_deselected, collect_type_view,
+    visible_leaf_items, wire_check_propagation,
 )
 from .worker import BridgeWorker
 
@@ -58,6 +60,7 @@ class MainWindow(QMainWindow):
         self.new_alloc = None
         self._t2_plc = None       # (plan, alloc) staged by scanner assign
         self._syncing_types = False
+        self._last_view = "type"  # which tree view the model reflects
 
         self._thread = QThread(self)
         self._worker = BridgeWorker()
@@ -186,20 +189,71 @@ class MainWindow(QMainWindow):
             "double-click Access to change Read / Read-Write)</span>")
         members_hdr.setWordWrap(True)
         lay.addWidget(members_hdr)
-        self.filter_edit = QLineEdit()
-        self.filter_edit.setPlaceholderText("Filter members...")
-        self.filter_edit.textChanged.connect(self._apply_filter)
-        lay.addWidget(self.filter_edit)
+
+        view_row = QHBoxLayout()
+        self.view_combo = QComboBox()
+        self.view_combo.addItems(["Group by type (compact)",
+                                  "Group by instance (detailed)"])
+        self.view_combo.setToolTip(
+            "By type: each DDT member appears once; edits apply to every "
+            "instance (including future ones).\nBy instance: every variable "
+            "of every instance, for per-variable exceptions.")
+        self.view_combo.currentIndexChanged.connect(self._view_changed)
+        view_row.addWidget(self.view_combo)
         self.type_mode_cb = QCheckBox("Type-level editing")
         self.type_mode_cb.setToolTip(
             "Checked: member add/remove and access changes apply to ALL "
             "variables of the same DDT type.\nUnchecked: manual per-variable "
-            "selection.")
+            "selection. (Only relevant in the by-instance view.)")
         self.type_mode_cb.setChecked(True)
         self.type_mode_cb.toggled.connect(self._type_mode_toggled)
-        lay.addWidget(self.type_mode_cb)
+        view_row.addWidget(self.type_mode_cb)
+        view_row.addStretch()
+        lay.addLayout(view_row)
+
+        filter_row = QHBoxLayout()
+        self.filter_edit = QLineEdit()
+        self.filter_edit.setPlaceholderText(
+            "Filter by name / type / comment...")
+        self.filter_edit.textChanged.connect(self._refilter)
+        filter_row.addWidget(self.filter_edit, stretch=1)
+        self.filter_access = QComboBox()
+        self.filter_access.addItems(["Any access", "Read", "Read/Write"])
+        self.filter_access.currentIndexChanged.connect(self._refilter)
+        filter_row.addWidget(self.filter_access)
+        self.filter_state = QComboBox()
+        self.filter_state.addItems(["All", "Checked", "Unchecked"])
+        self.filter_state.currentIndexChanged.connect(self._refilter)
+        filter_row.addWidget(self.filter_state)
+        lay.addLayout(filter_row)
+
+        bulk_row = QHBoxLayout()
+        self.counter_label = QLabel("")
+        self.counter_label.setProperty("class", "muted")
+        bulk_row.addWidget(self.counter_label)
+        bulk_row.addStretch()
+        check_btn = QPushButton("Check shown")
+        check_btn.setToolTip("Check every row the filter currently shows")
+        check_btn.clicked.connect(lambda: self._bulk_check(True))
+        bulk_row.addWidget(check_btn)
+        uncheck_btn = QPushButton("Uncheck shown")
+        uncheck_btn.clicked.connect(lambda: self._bulk_check(False))
+        bulk_row.addWidget(uncheck_btn)
+        self.bulk_access_combo = QComboBox()
+        self.bulk_access_combo.addItems(["Read", "Read/Write"])
+        bulk_row.addWidget(self.bulk_access_combo)
+        apply_btn = QPushButton("Set shown")
+        apply_btn.setToolTip("Apply this access to every row the filter "
+                             "currently shows")
+        apply_btn.clicked.connect(self._bulk_access)
+        bulk_row.addWidget(apply_btn)
+        lay.addLayout(bulk_row)
+
         self.tree = QTreeView()
         self.tree.setAlternatingRowColors(True)
+        self.tree.setSelectionMode(QTreeView.ExtendedSelection)
+        self.tree.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.tree.customContextMenuRequested.connect(self._tree_menu)
         lay.addWidget(self.tree, stretch=1)
         self.save_defaults_btn = QPushButton("Save R/W defaults for these DDTs")
         self.save_defaults_btn.setToolTip(
@@ -251,54 +305,164 @@ class MainWindow(QMainWindow):
         self._t2_plc = None
         self.rtu_generate_btn.setEnabled(False)
 
+    def _view_changed(self, _index: int) -> None:
+        if self.data is None:
+            return
+        self._commit_selection_from(self._last_view)
+        self._populate_members()
+
     def _populate_members(self) -> None:
         chosen = set(self.state.selected_types)
         leaves = [l for l in self.data.leaves
                   if (l.ddt_type or l.type_name) in chosen]
         self.type_mode_cb.setChecked(self.state.settings.type_level_edit)
-        type_mode = self.type_mode_cb.isChecked
-        model = build_member_model(
-            leaves,
-            deselected=set(self.state.deselected_leaves),
-            overrides=self.state.access_overrides,
-            alloc_leaves=self.state.alloc.leaves,
-            type_deselected=set(self.state.deselected_type_members),
-        )
-        wire_check_propagation(model, type_mode)
+        by_type = self.view_combo.currentIndex() == 0
+        self._last_view = "type" if by_type else "instance"
+        self.type_mode_cb.setEnabled(not by_type)
+        if by_type:
+            model = build_type_model(
+                leaves,
+                deselected=set(self.state.deselected_leaves),
+                overrides=self.state.access_overrides,
+                type_deselected=set(self.state.deselected_type_members),
+            )
+            wire_check_propagation(model, lambda: False)  # parent/child only
+            delegate_scope = lambda: True                 # always type-level
+        else:
+            model = build_member_model(
+                leaves,
+                deselected=set(self.state.deselected_leaves),
+                overrides=self.state.access_overrides,
+                alloc_leaves=self.state.alloc.leaves,
+                type_deselected=set(self.state.deselected_type_members),
+            )
+            wire_check_propagation(model, self.type_mode_cb.isChecked)
+            delegate_scope = self.type_mode_cb.isChecked
         self.tree.setModel(model)
         self.tree.setItemDelegateForColumn(
             COL_ACCESS,
-            AccessDelegate(self.state.access_overrides, type_mode, self.tree))
+            AccessDelegate(self.state.access_overrides, delegate_scope,
+                           self.tree))
         # selection is address-free: addresses are assigned per destination
         self.tree.setColumnHidden(COL_ADDRESS, True)
         self.tree.expandAll()
         for col in (0, 1, 2, 4):
             self.tree.resizeColumnToContents(col)
-        self._apply_filter(self.filter_edit.text())
+        self._refilter()
 
-    def _apply_filter(self, text: str) -> None:
+    def _refilter(self, *_args) -> None:
         model = self.tree.model()
         if model is None:
             return
-        needle = text.strip().lower()
+        needle = self.filter_edit.text().strip().lower()
+        want_access = self.filter_access.currentText()
+        want_state = self.filter_state.currentText()
         root = model.invisibleRootItem()
+        total = shown = 0
+
+        def leaf_visible(parent, row) -> bool:
+            child = parent.child(row, COL_MEMBER)
+            leaf = child.data(LEAF_ROLE)
+            if leaf is None:
+                return True
+            group_text = parent.text().lower() if parent is not root else ""
+            if needle:
+                hay = " ".join((
+                    child.text(), group_text, leaf.type_name,
+                    (parent.child(row, COL_COMMENT).text()
+                     if parent.child(row, COL_COMMENT) else ""),
+                )).lower()
+                if needle not in hay:
+                    return False
+            if want_access != "Any access":
+                cell = parent.child(row, COL_ACCESS)
+                if cell is None or cell.text() != want_access:
+                    return False
+            if want_state != "All":
+                checked = child.checkState() == Qt.Checked
+                if (want_state == "Checked") != checked:
+                    return False
+            return True
+
         for r in range(root.rowCount()):
             group = root.child(r, COL_MEMBER)
             if not group.hasChildren():
-                hide = bool(needle) and needle not in group.text().lower()
-                self.tree.setRowHidden(r, root.index(), hide)
+                total += 1
+                ok = leaf_visible(root, r)
+                shown += ok
+                self.tree.setRowHidden(r, root.index(), not ok)
                 continue
             any_child = False
             for cr in range(group.rowCount()):
-                child = group.child(cr, COL_MEMBER)
-                hide = bool(needle) and needle not in child.text().lower() \
-                    and needle not in group.text().lower()
-                self.tree.setRowHidden(cr, group.index(), hide)
-                any_child = any_child or not hide
-            self.tree.setRowHidden(r, root.index(),
-                                   bool(needle) and not any_child)
+                total += 1
+                ok = leaf_visible(group, cr)
+                shown += ok
+                self.tree.setRowHidden(cr, group.index(), not ok)
+                any_child = any_child or ok
+            self.tree.setRowHidden(r, root.index(), not any_child)
+        self.counter_label.setText(f"showing {shown} of {total}")
+
+    # ----------------------------------------------------------- bulk edits
+
+    def _bulk_check(self, checked: bool) -> None:
+        items = [item for item, _leaf in visible_leaf_items(self.tree)]
+        bulk_set_checked(items, checked)
+        self._refilter()
+        self._log(f"Bulk {'checked' if checked else 'unchecked'} "
+                  f"{len(items)} shown rows.")
+
+    def _bulk_access(self) -> None:
+        label = self.bulk_access_combo.currentText()
+        targets = visible_leaf_items(self.tree)
+        n = bulk_set_access(
+            self.tree.model(), targets, label, self.state.access_overrides,
+            type_scope=(self._last_view == "type"
+                        or self.type_mode_cb.isChecked()))
+        self._refilter()
+        self._log(f"Bulk access: set {n} rows to {label}.")
+
+    def _selected_leaf_items(self):
+        model = self.tree.model()
+        out = []
+        for index in self.tree.selectionModel().selectedRows(COL_MEMBER):
+            item = model.itemFromIndex(index)
+            leaf = item.data(LEAF_ROLE) if item else None
+            if leaf is not None:
+                out.append((item, leaf))
+        return out
+
+    def _tree_menu(self, pos) -> None:
+        from PySide6.QtWidgets import QMenu
+
+        targets = self._selected_leaf_items()
+        if not targets:
+            return
+        menu = QMenu(self)
+        act_check = menu.addAction(f"Check {len(targets)} selected")
+        act_uncheck = menu.addAction(f"Uncheck {len(targets)} selected")
+        menu.addSeparator()
+        act_read = menu.addAction("Set access: Read")
+        act_rw = menu.addAction("Set access: Read/Write")
+        chosen = menu.exec(self.tree.viewport().mapToGlobal(pos))
+        if chosen is None:
+            return
+        if chosen in (act_check, act_uncheck):
+            bulk_set_checked([i for i, _l in targets], chosen is act_check)
+        else:
+            label = "Read" if chosen is act_read else "Read/Write"
+            bulk_set_access(
+                self.tree.model(), targets, label,
+                self.state.access_overrides,
+                type_scope=(self._last_view == "type"
+                            or self.type_mode_cb.isChecked()))
+        self._refilter()
+
+    # ----------------------------------------------------------- committing
 
     def _commit_selection(self) -> None:
+        self._commit_selection_from(self._last_view)
+
+    def _commit_selection_from(self, view: str) -> None:
         """Fold the tree's current check state into the sidecar, keeping
         exclusions of types that are currently hidden (unchecked)."""
         model = self.tree.model()
@@ -310,11 +474,17 @@ class MainWindow(QMainWindow):
             leaf = self._leaf_by_path.get(path)
             return (leaf.ddt_type or leaf.type_name) if leaf else None
 
-        per_var, type_members = collect_deselected(model)
         kept_vars = [p for p in self.state.deselected_leaves
                      if leaf_type(p) not in shown]
         kept_types = [k for k in self.state.deselected_type_members
                       if k.split("|", 1)[0] not in shown]
+        if view == "type":
+            prior_shown = [p for p in self.state.deselected_leaves
+                           if leaf_type(p) in shown]
+            per_var, type_members = collect_type_view(
+                model, prior_shown, self.data.leaves)
+        else:
+            per_var, type_members = collect_deselected(model)
         self.state.deselected_leaves = kept_vars + per_var
         self.state.deselected_type_members = kept_types + type_members
 

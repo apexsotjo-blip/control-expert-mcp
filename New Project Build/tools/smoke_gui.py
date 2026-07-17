@@ -69,6 +69,41 @@ def main() -> None:
     check("Mirrorable tags" in win.overview_label.text(),
           "overview tab shows project stats")
 
+    # ---- compact BY-TYPE view (the default): one row per DDT member
+    model = win.tree.model()
+    check(win.view_combo.currentIndex() == 0, "by-type view is the default")
+    pump_t = next(model.item(r, COL_MEMBER) for r in range(model.rowCount())
+                  if model.item(r, COL_MEMBER).text().startswith("PUMP_T"))
+    check("2 instances" in pump_t.text(),
+          "type group shows its instance count")
+    rels = [pump_t.child(r, COL_MEMBER).text()
+            for r in range(pump_t.rowCount())]
+    check(rels.count("Ctrl.Mode") == 1,
+          "by-type view lists each DDT member exactly once")
+
+    # bulk access in type view: filter + 'Set shown' writes type overrides
+    win.filter_edit.setText("Ctrl.Mode")
+    win.bulk_access_combo.setCurrentText("Read/Write")
+    win._bulk_access()
+    check(win.state.access_overrides.get("PUMP_T|Ctrl.Mode") == "read_write",
+          "bulk 'Set shown' writes a type-level access override")
+    win.bulk_access_combo.setCurrentText("Read")
+    win._bulk_access()
+    win.filter_edit.setText("")
+
+    # unchecking a member in type view commits a type-level exclusion
+    mode_row = rels.index("Ctrl.Mode")
+    pump_t.child(mode_row, COL_MEMBER).setCheckState(Qt.Unchecked)
+    win._commit_selection()
+    check("PUMP_T|Ctrl.Mode" in win.state.deselected_type_members,
+          "by-type uncheck commits a type-level exclusion")
+    pump_t.child(mode_row, COL_MEMBER).setCheckState(Qt.Checked)
+    win._commit_selection()
+    check("PUMP_T|Ctrl.Mode" not in win.state.deselected_type_members,
+          "re-checking in type view clears the exclusion")
+
+    # ---- detailed BY-INSTANCE view for per-variable work
+    win.view_combo.setCurrentIndex(1)
     model = win.tree.model()
     pump1 = next(model.item(r, COL_MEMBER) for r in range(model.rowCount())
                  if model.item(r, COL_MEMBER).text().startswith("Pump1"))
@@ -113,7 +148,7 @@ def main() -> None:
     check(win.tree.isColumnHidden(COL_ADDRESS),
           "address column hidden during selection (addresses assigned later)")
 
-    # live filter hides non-matching rows
+    # live filter hides non-matching rows and updates the counter
     win.filter_edit.setText("Cmd")
     root = model.invisibleRootItem()
     line_speed_row = next(
@@ -121,7 +156,27 @@ def main() -> None:
         if root.child(r, COL_MEMBER).text().startswith("Line_Speed"))
     check(win.tree.isRowHidden(line_speed_row, root.index()),
           "filter hides non-matching standalone tags")
+    check(win.counter_label.text().startswith("showing 2 of"),
+          "counter reports shown vs total")
+
+    # bulk check/uncheck applies only to the filtered rows
+    from ddt_mirror.gui.tree import visible_leaf_items
+
+    win._bulk_check(False)
+    check(all(i.checkState() == Qt.Unchecked
+              for i, _l in visible_leaf_items(win.tree)),
+          "bulk uncheck hits every shown row")
+    win._bulk_check(True)
     win.filter_edit.setText("")
+
+    # access filter narrows to Read/Write rows only
+    win.filter_access.setCurrentText("Read/Write")
+    shown_access = {i.parent().child(i.row(), COL_ACCESS).text()
+                    for i, _l in visible_leaf_items(win.tree)
+                    if i.parent() is not None}
+    check(shown_access == {"Read/Write"},
+          "access filter shows only Read/Write rows")
+    win.filter_access.setCurrentText("Any access")
 
     # commit semantics: type-level vs per-variable exclusions
     win._commit_selection()
