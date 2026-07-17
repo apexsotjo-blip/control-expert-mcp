@@ -218,6 +218,8 @@ input[type=checkbox] {
 .picker-item .meta { margin-left: auto; color: var(--muted); font-size: 12px; }
 .picker-item.sel .meta { color: rgba(255,255,255,.75); }
 
+.star { color: var(--orange); font-size: 12px; }
+
 /* ----------------------------------------------------------- tree view */
 .chev {
   display: inline-block; width: 18px; cursor: pointer; user-select: none;

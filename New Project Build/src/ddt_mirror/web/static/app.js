@@ -8,6 +8,7 @@ const state = {
   overrides: {},           // access override keys -> "read"|"read_write"
   filter: { text: "", access: "", state: "", group: "type" },
   collapsed: new Set(),    // group keys folded shut in the tree
+  libraryTypes: new Set(), // DDT types with saved global defaults
   plcPreview: null,
   plcTab: "st",
   rtuAssigned: false,
@@ -181,55 +182,108 @@ function accessPill(row) {
           title="Click to toggle Read / Read-Write">${label}</button>`;
 }
 
+function groupKey(r) {
+  return state.filter.group === "type"
+    ? r.group : (r.member ? r.instance : "— standalone —");
+}
+
 function renderTable() {
   const rows = visibleRows();
   const byType = state.filter.group === "type";
   const body = $("varbody");
   const groups = new Map();
   for (const r of rows) {
-    const key = byType ? r.group : (r.member ? r.instance : "— standalone —");
+    const key = groupKey(r);
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(r);
   }
-  let html = "";
+  const parts = [];
   for (const [name, members] of groups) {
     const allOn = members.every((r) => r.checked);
     const someOn = members.some((r) => r.checked);
     const closed = state.collapsed.has(name);
+    const star = byType && state.libraryTypes.has(name)
+      ? ` <span class="star" title="Has saved global defaults">★</span>` : "";
     const insts = byType
       ? new Set(members.map((r) => r.instance)).size + " tags" : "";
-    html += `<tr class="group-row" data-gkey="${name}"><td>
+    parts.push(`<tr class="group-row" data-gkey="${name}"><td>
       <input type="checkbox" data-group="${name}"
         ${allOn ? "checked" : ""} ${!allOn && someOn ? "data-mixed=1" : ""}>
       </td><td colspan="5"><span class="chev ${closed ? "closed" : ""}"
-        >▶</span>${name} <span class="count">${insts} ${
-        closed ? "· " + members.length + " hidden" : ""}</span></td></tr>`;
+        >▶</span>${name}${star} <span class="count">${insts} ${
+        closed ? "· " + members.length + " hidden" : ""}</span></td></tr>`);
     if (closed) continue;
     for (const r of members) {
-      html += `<tr class="${r.checked ? "" : "excluded"}" data-path="${r.path}">
+      parts.push(`<tr class="${r.checked ? "" : "excluded"}" data-path="${r.path}">
         <td><input type="checkbox" data-path="${r.path}"
              ${r.checked ? "checked" : ""}></td>
         <td class="tag-name">${r.instance}</td>
         <td>${r.member || "<span class='muted'>—</span>"}</td>
         <td><span class="type-badge">${r.type}</span></td>
         <td>${accessPill(r)}</td>
-        <td class="muted">${r.comment || ""}</td></tr>`;
+        <td class="muted">${r.comment || ""}</td></tr>`);
     }
   }
-  body.innerHTML = html || `<tr><td colspan="6" class="muted"
+  body.innerHTML = parts.join("") || `<tr><td colspan="6" class="muted"
      style="padding:30px;text-align:center">No variables match.</td></tr>`;
   body.querySelectorAll("input[data-mixed]").forEach(
     (cb) => { cb.indeterminate = true; });
+  updateCounter(rows.length);
+}
+
+function updateCounter(shown) {
   $("counter").textContent =
-    `${rows.length} of ${state.rows.length} variables · ` +
+    `${shown ?? visibleRows().length} of ${state.rows.length} variables · ` +
     `${state.rows.filter((r) => r.checked).length} included`;
 }
 
+function refreshGroupHeader(key) {
+  const cb = $("varbody").querySelector(
+    `input[data-group="${CSS.escape(key)}"]`);
+  if (!cb) return;
+  const members = state.rows.filter(
+    (r) => state.selectedTypes.has(r.group) && groupKey(r) === key);
+  const allOn = members.every((r) => r.checked);
+  cb.checked = allOn;
+  cb.indeterminate = !allOn && members.some((r) => r.checked);
+}
+
+/* Targeted update: flip N rows in place; full re-render only for big sets
+   or when a state filter would change which rows are visible. */
 function setChecked(paths, on) {
   const set = new Set(paths);
   for (const r of state.rows) if (set.has(r.path)) r.checked = on;
-  renderTable();
+  if (paths.length > 200 || state.filter.state !== "") {
+    renderTable();
+  } else {
+    const body = $("varbody");
+    const touched = new Set();
+    for (const p of paths) {
+      const tr = body.querySelector(`tr[data-path="${CSS.escape(p)}"]`);
+      if (!tr) continue;
+      tr.classList.toggle("excluded", !on);
+      const cb = tr.querySelector("input[type=checkbox]");
+      if (cb) cb.checked = on;
+      const row = state.rows.find((r) => r.path === p);
+      if (row) touched.add(groupKey(row));
+    }
+    touched.forEach(refreshGroupHeader);
+    updateCounter();
+  }
   scheduleSave();
+}
+
+function updatePills(paths) {
+  const body = $("varbody");
+  for (const p of paths) {
+    const row = state.rows.find((r) => r.path === p);
+    const pill = body.querySelector(
+      `.access-pill[data-path="${CSS.escape(p)}"]`);
+    if (!row || !pill) continue;
+    const acc = effectiveAccess(row);
+    pill.className = "access-pill " + acc;
+    pill.textContent = acc === "read_write" ? "R/W" : "Read";
+  }
 }
 
 function toggleAccess(path) {
@@ -237,14 +291,20 @@ function toggleAccess(path) {
   if (!row) return;
   const next = effectiveAccess(row) === "read" ? "read_write" : "read";
   const typeScope = state.filter.group === "type" && row.ddt_type;
+  let affected = [path];
   if (typeScope) {
     state.overrides[row.type_key] = next;
+    affected = [];
     for (const r of state.rows)
-      if (r.type_key === row.type_key) delete state.overrides["!" + r.path];
+      if (r.type_key === row.type_key) {
+        delete state.overrides["!" + r.path];
+        affected.push(r.path);
+      }
   } else {
     state.overrides["!" + path] = next;
   }
-  renderTable();
+  if (state.filter.access) renderTable();   // filter may hide/show rows
+  else updatePills(affected);
   scheduleSave();
 }
 
@@ -256,6 +316,10 @@ async function loadVariables() {
   state.selectedTypes = new Set(
     v.selected_types.length ? v.selected_types
       : [...new Set(v.rows.map((r) => r.group))]);
+  try {
+    const lib = await api("/api/library");
+    state.libraryTypes = new Set(lib.types);
+  } catch (e) { /* non-fatal */ }
   renderTable();
 }
 
@@ -466,9 +530,13 @@ function wire() {
     };
   });
   $("btn-open").onclick = openProject;
+  let searchTimer = null;
   $("search").addEventListener("input", (e) => {
-    state.filter.text = e.target.value;
-    renderTable();
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => {
+      state.filter.text = e.target.value;
+      renderTable();
+    }, 160);
   });
   segWire("seg-access", "access");
   segWire("seg-state", "state");
@@ -522,6 +590,24 @@ function wire() {
   };
   $("bulk-read").onclick = () => bulkAccess("read");
   $("bulk-rw").onclick = () => bulkAccess("read_write");
+  $("lib-save").onclick = async () => {
+    const ddts = [...new Set(state.rows.filter(
+      (r) => r.ddt_type && state.selectedTypes.has(r.group))
+      .map((r) => r.ddt_type))];
+    if (!ddts.length) { toast("No DDT types selected.", "warn"); return; }
+    const ok = await confirmModal("Save DDT defaults",
+      `Save the current member selection and Read/R-W choices of ` +
+      `${ddts.join(", ")} as GLOBAL defaults? Every project you open ` +
+      "later that uses these DDT type names is configured automatically.");
+    if (!ok) return;
+    try {
+      const r = await api("/api/library/save", { types: ddts });
+      r.saved.forEach((t) => state.libraryTypes.add(t));
+      renderTable();
+      toast(`Defaults saved for ${r.saved.join(", ")} — applied ` +
+            "automatically on every future project.", "ok");
+    } catch (e) { toast(e.message, "error"); }
+  };
 
   $("plc-preview").onclick = plcPreview;
   $("plc-generate").onclick = plcGenerate;

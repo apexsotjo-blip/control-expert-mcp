@@ -115,6 +115,16 @@ def test_browse_lists_drives_dirs_and_filtered_files(client, tmp_path):
     assert bad.status_code == 400
 
 
+def test_library_save_and_list(client, tmp_path, monkeypatch):
+    monkeypatch.setenv("DDT_MIRROR_LIBRARY", str(tmp_path / "lib.json"))
+    r = client.post("/api/library/save", json={"types": ["PUMP_T"]})
+    assert r.status_code == 200 and r.json()["saved"] == ["PUMP_T"]
+    assert client.get("/api/library").json()["types"] == ["PUMP_T"]
+    # elementary-only request is rejected with a clear message
+    r = client.post("/api/library/save", json={"types": ["INT"]})
+    assert r.status_code == 400
+
+
 def test_index_served(client):
     r = client.get("/")
     assert r.status_code == 200

@@ -272,14 +272,54 @@ def set_selection(snap: SelectionSnapshot) -> dict:
         type_members = sorted(
             k for k, (total, off) in totals.items() if off and off == total)
         type_set = set(type_members)
+        key_of = {l.full_path: l.access_key for l in data.leaves
+                  if l.ddt_type}
         per_var = sorted(
-            p for p in unchecked
-            if not any(l.access_key in type_set for l in data.leaves
-                       if l.full_path == p))
+            p for p in unchecked if key_of.get(p) not in type_set)
         state.deselected_type_members = type_members
         state.deselected_leaves = per_var
         S.plan = S.t2 = None  # selection changed: staged plans are stale
         return {"per_var": len(per_var), "type_level": len(type_members)}
+
+
+# ------------------------------------------------------- DDT defaults library
+
+class LibrarySaveReq(BaseModel):
+    types: list[str] = []      # empty = every selected DDT type
+
+
+@app.get("/api/library")
+def library_list() -> dict:
+    from ..core.ddt_library import library_path, load_library
+
+    return {"types": sorted(load_library().types),
+            "path": library_path()}
+
+
+@app.post("/api/library/save")
+def library_save(req: LibrarySaveReq) -> dict:
+    """Capture the CURRENT member selection + Read/R-W choices of DDT
+    types into the global library; any project opened later that uses
+    the same DDT type names is configured automatically."""
+    from ..core.ddt_library import (
+        capture_type, load_library, project_ddt_types, save_library,
+    )
+
+    with S.lock:
+        S.require_project()
+        present = set(project_ddt_types(S.data))
+        wanted = req.types or [t for t in S.state.selected_types
+                               if t in present]
+        wanted = [t for t in wanted if t in present]
+        if not wanted:
+            raise HTTPException(400, "No DDT types to save (elementary "
+                                     "tags stay per-project).")
+        lib = load_library()
+        for t in wanted:
+            capture_type(lib, t, S.data, S.state)
+        path = save_library(lib)
+        S.log(f"Saved R/W defaults for {', '.join(wanted)} -> {path}", "ok")
+        return {"saved": wanted, "path": path}
 
 
 # -------------------------------------------------------------- PLC mirror
