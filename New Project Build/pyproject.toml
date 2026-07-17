@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ddt-mirror"
-version = "0.1.0"
+version = "1.0.0"
 description = "One-click Control Expert DDT-to-HMI/RTU tag mirroring: located mirror variables, ST mirror sections, address map, Vijeo Designer and SCADAPack RemoteConnect import files."
 requires-python = ">=3.10"
 dependencies = [
