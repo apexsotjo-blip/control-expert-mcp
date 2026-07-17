@@ -3,14 +3,15 @@
 One-click linking of EcoStruxure Control Expert tags to the rest of the
 project — Vijeo Designer HMIs and SCADAPack RTUs (RemoteConnect).
 
-**Flow:** open → pick types → pick members / Read-Write access → **choose a
-destination** → the app assigns the addressing *for that destination* and
-you generate. Selection is destination-agnostic and address-free; addresses
-are never assigned before you pick where the tags go. This matters because
-the two destinations use unrelated addressing — PLC `%M`/`%MW` vs RTU DNP3
-points + Modbus registers — and the RTU addresses can only be decided
-*after* you supply your RemoteConnect export (they are packed above whatever
-that workbook already uses).
+**Single-window workspace** (v1.2): tag selection on the left (types
+checklist + member/access tree with live filter), destination tabs on the
+right (Overview, PLC mirror → Vijeo, SCADAPack RTU), activity log at the
+bottom. Selection is destination-agnostic and address-free; each
+destination tab assigns its own addressing on *Assign/Preview*. This
+matters because the destinations use unrelated addressing — PLC `%M`/`%MW`
+vs RTU DNP3 points + Modbus registers — and the RTU addresses can only be
+decided *after* you supply your RemoteConnect export (they are packed
+above whatever that workbook already uses).
 
 ## PLC-internal mirror → Vijeo / Modbus HMI
 

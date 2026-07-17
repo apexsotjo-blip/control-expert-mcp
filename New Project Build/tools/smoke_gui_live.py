@@ -1,4 +1,4 @@
-"""Live GUI smoke test: the real wizard flow against real Control Expert.
+"""Live GUI smoke test: the workspace flow against real Control Expert.
 
 Uses the scratch project produced by verify_e2e.py. Drives the exact worker
 signal path the GUI uses (queued cross-thread calls), skipping only the
@@ -16,7 +16,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from PySide6.QtCore import QEventLoop, QTimer
 from PySide6.QtWidgets import QApplication
 
-from ddt_mirror.gui.app import MainWindow, PAGE_GENERATE, PAGE_TYPES
+from ddt_mirror.gui.app import MainWindow
 
 PROJECT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..",
                                        "_e2e_work", "mirror_e2e.stu"))
@@ -47,16 +47,14 @@ def main() -> None:
     win = MainWindow()
 
     print("==> Opening real project through the GUI worker...")
-    win.path_edit.setText(PROJECT)
-    win._open_clicked()
+    win.request_open.emit(PROJECT)
     got = wait_for(win._worker.opened, 240_000)
     check(got is not None, "worker opened the project and scanned variables")
     app.processEvents()
-    check(win.stack.currentIndex() == PAGE_TYPES, "GUI advanced to types page")
+    check(win.types_list.count() > 0, "types checklist populated")
+    check(win.tree.model() is not None, "member tree populated")
 
-    win._types_next()
-    win._members_next()
-    check(win.stack.currentIndex() == PAGE_GENERATE, "reached generate page")
+    win._plc_preview_clicked()
     check("HMI_Pump1_Man_SP" in win.preview_st.toPlainText(),
           "preview regenerated from live project data")
 
