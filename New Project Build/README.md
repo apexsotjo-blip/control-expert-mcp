@@ -159,6 +159,36 @@ collides — so every new point is numbered above the workbook's total
 object count. Points from a rejected import (object absent from the
 workbook) are renumbered automatically on the next export.
 
+## T2: PLC runs the program, SCADAPack polls it (Modbus scanner)
+
+For sites where the Modicon PLC keeps the program and the SCADAPack is a
+data concentrator (HMI polls the RTU, GeoSCADA takes DNP3), the RTU page
+has a second mode: **"PLC runs it — RTU polls the PLC via Modbus
+scanner"**. Requirements: the PLC must be configured in RemoteConnect as
+a Modbus/TCP Server Device (its name is entered on the page) and appear
+in the export.
+
+Generate then does two things in one go:
+
+1. **PLC side** — the normal mirror, generated with `word_bools`:
+   BOOLs go to `%MW` words (`BOOL_TO_INT` copies) instead of `%M` coils,
+   so every tag is register-reachable by the scanner.
+2. **Workbook side** — the export is enriched with scanner-fed objects
+   (`Analog <0>`, Logic Variable Type `None <0>` — no Logic Editor
+   program involved), contiguous scan blocks on sheet *(10) Modbus
+   Scanners* (`UINT (Analog) <5000>`, the only import-probed scan type;
+   Read blocks merge small gaps, Read/Write blocks stay strictly on our
+   registers so the RTU never writes foreign addresses), and per-register
+   bindings on sheet *(14)*. Objects get DNP3 points and RTU server
+   registers as usual; the `_T2_point_map.csv` shows the whole chain:
+   `PlcPath → PlcAddress → PlcRegister → Object → Dnp3Point →
+   RtuRegister → HmiAddress`.
+
+Re-running against a re-export is idempotent: covered registers get no
+new blocks, existing bindings/objects are never duplicated. Limits (both
+warned): 32-bit leaves are skipped (32-bit scan enum unprobed); BOOLs are
+served as Analog 0/1 objects (native Digital-on-bit binding unprobed).
+
 ## Vijeo side (one-time equipment setup)
 
 - IO Manager → ModbusTCPIP equipment → enable **IEC61131 syntax**,

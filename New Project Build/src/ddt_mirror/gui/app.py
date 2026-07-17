@@ -37,6 +37,8 @@ class MainWindow(QMainWindow):
     request_open = Signal(str)
     request_apply = Signal(object, object, object, str)
     request_transfer = Signal(object, object, str, str, str)
+    request_transfer_t2 = Signal(object, object, object, object,
+                                 str, str, str, str)
     request_shutdown = Signal()
 
     def __init__(self) -> None:
@@ -49,6 +51,7 @@ class MainWindow(QMainWindow):
         self.project_path = ""
         self.plan = None
         self.new_alloc = None
+        self._t2_plc = None       # (plan, alloc) staged by scanner assign
 
         self._thread = QThread(self)
         self._worker = BridgeWorker()
@@ -56,10 +59,12 @@ class MainWindow(QMainWindow):
         self.request_open.connect(self._worker.open_project)
         self.request_apply.connect(self._worker.apply)
         self.request_transfer.connect(self._worker.transfer)
+        self.request_transfer_t2.connect(self._worker.transfer_t2)
         self.request_shutdown.connect(self._worker.shutdown)
         self._worker.opened.connect(self._on_opened)
         self._worker.applied.connect(self._on_applied)
         self._worker.transferred.connect(self._on_transferred)
+        self._worker.t2_transferred.connect(self._on_t2_transferred)
         self._worker.failed.connect(self._on_failed)
         self._worker.progress.connect(self._on_progress)
         self._thread.start()
@@ -346,6 +351,7 @@ class MainWindow(QMainWindow):
             "Pick your RemoteConnect export above, then "
             "\"Assign addresses & preview\".")
         self.rtu_generate_btn.setEnabled(False)
+        self._t2_plc = None
         self.stack.setCurrentIndex(PAGE_RTU)
 
     # ---------------------------------------------------- page 4: PLC mirror
@@ -478,6 +484,24 @@ class MainWindow(QMainWindow):
         row.addWidget(browse)
         lay.addLayout(row)
 
+        mode_row = QHBoxLayout()
+        mode_row.addWidget(QLabel("Who runs the program:"))
+        self.rtu_mode_combo = QComboBox()
+        self.rtu_mode_combo.addItems([
+            "RTU runs it — objects bind to Logic Editor variables",
+            "PLC runs it — RTU polls the PLC via Modbus scanner",
+        ])
+        self.rtu_mode_combo.currentIndexChanged.connect(self._rtu_mode_changed)
+        mode_row.addWidget(self.rtu_mode_combo)
+        self.rtu_device_label = QLabel("PLC device in workbook:")
+        self.rtu_device_edit = QLineEdit()
+        self.rtu_device_edit.setPlaceholderText(
+            "Modbus/TCP device name (RemoteConnect > Modbus Server Devices)")
+        mode_row.addWidget(self.rtu_device_label)
+        mode_row.addWidget(self.rtu_device_edit)
+        lay.addLayout(mode_row)
+        self._rtu_mode_changed(0)
+
         opts = QHBoxLayout()
         opts.addWidget(QLabel("HMI address indexing:"))
         self.rtu_index_combo = QComboBox()
@@ -512,6 +536,14 @@ class MainWindow(QMainWindow):
         lay.addLayout(nav)
         return page
 
+    def _rtu_mode_changed(self, index: int) -> None:
+        scanner = index == 1
+        self.rtu_device_label.setVisible(scanner)
+        self.rtu_device_edit.setVisible(scanner)
+        self._t2_plc = None
+        if hasattr(self, "rtu_generate_btn"):  # exists after page build
+            self.rtu_generate_btn.setEnabled(False)
+
     def _rtu_browse(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
             self, "Your RTU configuration exported from RemoteConnect",
@@ -521,8 +553,6 @@ class MainWindow(QMainWindow):
             self.rtu_src_edit.setText(path)
 
     def _rtu_assign(self) -> None:
-        from ..codegen.remoteconnect import preview_remoteconnect
-
         src = self.rtu_src_edit.text().strip()
         if not os.path.isfile(src):
             QMessageBox.warning(self, "SCADAPack RTU",
@@ -533,12 +563,19 @@ class MainWindow(QMainWindow):
                                      "workbook...")
         QApplication.processEvents()
         try:
-            pv = preview_remoteconnect(self.data, self.state, src)
+            if self.rtu_mode_combo.currentIndex() == 1:
+                self._rtu_assign_scanner(src)
+            else:
+                self._rtu_assign_logic(src)
         except Exception as exc:  # bad/locked workbook, wrong file, ...
             self.statusBar().showMessage("Assignment failed.")
             self.rtu_generate_btn.setEnabled(False)
             QMessageBox.critical(self, "SCADAPack RTU", str(exc))
-            return
+
+    def _rtu_assign_logic(self, src: str) -> None:
+        from ..codegen.remoteconnect import preview_remoteconnect
+
+        pv = preview_remoteconnect(self.data, self.state, src)
         header = (f"Device type: {pv.device_type or 'unknown'}\n"
                   f"{pv.created} new objects to add; {pv.existing} already in "
                   f"the workbook (untouched).\n"
@@ -551,12 +588,64 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(
             f"Assigned: {pv.created} new objects. Review, then generate.")
 
+    def _rtu_assign_scanner(self, src: str) -> None:
+        from ..codegen.scanner import generate_t2_map_csv, plan_scanner
+
+        device = self.rtu_device_edit.text().strip()
+        if not device:
+            QMessageBox.warning(
+                self, "SCADAPack RTU",
+                "Enter the PLC's Modbus device name as configured in "
+                "RemoteConnect (Modbus Server Devices).")
+            return
+        plc_plan, plc_alloc = build_plan(
+            self.data, self.state,
+            project_name=os.path.basename(self.project_path),
+            word_bools=True)
+        t2 = plan_scanner(self.data, self.state, plc_plan.assignments,
+                          src, device)
+        self._t2_plc = (plc_plan, plc_alloc)
+        n_copies = sum(1 for a in plc_plan.assignments if not a.premapped)
+        header = (
+            f"PLC side: {len(plc_plan.new_variables)} mirror variables + "
+            f"{n_copies} ST copies (BOOLs as %MW words) - generated into "
+            "the Control Expert project on Generate.\n"
+            f"RTU side: device '{t2.device.name}', "
+            f"{t2.created_objects} new objects, "
+            f"{len(t2.new_blocks)} new scan blocks, "
+            f"{len(t2.bind_rows)} register bindings.\n"
+            f"Warnings: {len(t2.warnings)}\n" + "=" * 60 + "\n")
+        warn = ("\n\n--- warnings ---\n" + "\n".join(t2.warnings)
+                if t2.warnings else "")
+        self.rtu_preview.setPlainText(
+            header + generate_t2_map_csv(t2.map_rows) + warn)
+        self.rtu_generate_btn.setEnabled(True)
+        self.statusBar().showMessage(
+            f"Assigned: {t2.created_objects} objects over "
+            f"{len(t2.new_blocks)} scan blocks. Review, then generate.")
+
     def _rtu_generate(self) -> None:
         src = self.rtu_src_edit.text().strip()
         if not os.path.isfile(src):
             QMessageBox.warning(self, "SCADAPack RTU",
                                 "Pick your RemoteConnect .xls export first.")
             return
+        scanner_mode = self.rtu_mode_combo.currentIndex() == 1
+        if scanner_mode:
+            if not self._t2_plc:
+                QMessageBox.warning(self, "SCADAPack RTU",
+                                    "Run 'Assign addresses & preview' first.")
+                return
+            plan, _alloc = self._t2_plc
+            answer = QMessageBox.question(
+                self, "SCADAPack RTU",
+                "This will create the PLC mirror inside the Control Expert "
+                f"project ({len(plan.new_variables)} variables + the "
+                f"'{self.state.settings.section_name}' ST section, rebuild "
+                "and save), then write the enriched RemoteConnect .xls."
+                "\n\nContinue?")
+            if answer != QMessageBox.Yes:
+                return
         folder = QFileDialog.getExistingDirectory(
             self, "Folder for the transfer bundle",
             os.path.dirname(self.project_path))
@@ -564,8 +653,50 @@ class MainWindow(QMainWindow):
             return
         self.state.settings.hmi_index_base = self.rtu_index_combo.currentIndex()
         self.rtu_generate_btn.setEnabled(False)
-        self.request_transfer.emit(self.data, self.state, src, folder,
-                                   self.project_path)
+        if scanner_mode:
+            plan, alloc = self._t2_plc
+            self.request_transfer_t2.emit(
+                self.data, plan, alloc, self.state, src, folder,
+                self.project_path, self.rtu_device_edit.text().strip())
+        else:
+            self.request_transfer.emit(self.data, self.state, src, folder,
+                                       self.project_path)
+
+    def _on_t2_transferred(self, apply_report, t2_report) -> None:
+        self.rtu_generate_btn.setEnabled(True)
+        if not apply_report.ok:
+            self.statusBar().showMessage("PLC mirror failed - nothing "
+                                         "written to the workbook.")
+            QMessageBox.critical(
+                self, "SCADAPack RTU",
+                f"The PLC mirror step failed:\n{apply_report.error}\n\n"
+                "The RemoteConnect workbook was NOT modified.")
+            return
+        self.statusBar().showMessage("T2 bundle complete.")
+        msg = ("PLC project updated: "
+               f"{len(apply_report.created_vars)} mirror variables created "
+               f"(skipped {len(apply_report.skipped_vars)} existing), "
+               f"build {apply_report.build_state}, saved.\n\nWrote:\n"
+               f"  1. {t2_report.xls_path}\n"
+               f"     ({t2_report.created_objects} new objects, "
+               f"{t2_report.new_blocks} scan blocks, "
+               f"{t2_report.new_bindings} register bindings on device "
+               f"'{t2_report.device}')\n"
+               f"  2. {t2_report.map_path}\n\n"
+               "In RemoteConnect:\n"
+               "  1. Import the .xls (full configuration plus the new "
+               "objects and scanner blocks).\n"
+               "  2. Write the RTU configuration to the device - the "
+               "scanner starts polling the PLC; no Logic Editor program "
+               "is needed for these objects.\n"
+               "  3. Point the HMI at the RtuRegister/HmiAddress column "
+               "and GeoSCADA at the DNP3 points in the map CSV.")
+        warnings = list(apply_report.warnings) + list(t2_report.warnings)
+        if warnings:
+            msg += "\n\nWarnings:\n" + "\n".join(warnings[:12])
+            if len(warnings) > 12:
+                msg += f"\n... and {len(warnings) - 12} more"
+        QMessageBox.information(self, "Transfer to RemoteConnect (T2)", msg)
 
     def _on_transferred(self, report) -> None:
         self.rtu_generate_btn.setEnabled(True)

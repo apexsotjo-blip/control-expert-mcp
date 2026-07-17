@@ -17,7 +17,7 @@ from __future__ import annotations
 import hashlib
 import re
 
-from .model import Access, Assignment
+from .model import Access, Assignment, LeafKind
 
 CE_MAX_IDENT = 32
 _INVALID_CHARS = re.compile(r"[^A-Za-z0-9_]")
@@ -56,9 +56,16 @@ def _copy_line(a: Assignment) -> str:
         target, suffix = a.mirror_var, f"  (* {a.address} *)"
     else:
         target, suffix = a.address, ""
+    # BOOL mirrored into a %MW word (scanner topologies): a bare %MWi
+    # literal is INT-typed, so convert on both directions
+    word_bool = (a.leaf.kind is LeafKind.BIT
+                 and a.address.upper().startswith("%MW"))
     if a.leaf.access is Access.READ_WRITE:
-        return f"{a.leaf.full_path} := {target};{suffix}"
-    return f"{target} := {a.leaf.full_path};{suffix}"
+        source = f"INT_TO_BOOL({target})" if word_bool else target
+        return f"{a.leaf.full_path} := {source};{suffix}"
+    source = (f"BOOL_TO_INT({a.leaf.full_path})" if word_bool
+              else a.leaf.full_path)
+    return f"{target} := {source};{suffix}"
 
 
 def generate_st(

@@ -36,6 +36,7 @@ DT_DIGITAL = "Digital <1>"
 DT_ANALOG = "Analog <0>"
 DT_COUNTER = "Counter <2>"
 
+LVT_NONE = "None <0>"  # scanner-fed objects: no Logic Editor binding
 LVT_BOOL = "T_SPx70_BOOL <11>"
 LVT_INT = "T_SPx70_INT <2>"
 LVT_DINT = "T_SPx70_DINT <4>"
@@ -121,6 +122,26 @@ def rtu_spec(leaf: FlatLeaf) -> tuple[RtuSpec | None, str]:
     return None, "unsupported"
 
 
+def scanner_spec(leaf: FlatLeaf) -> tuple[RtuSpec | None, str]:
+    """Spec for a SCANNER-FED object (T2: the PLC runs the program and the
+    SCADAPack polls it): no Logic Editor binding (Logic Variable Type
+    'None <0>'), served as Analog UINT — the only scan data type present
+    in the reference site export ('UINT (Analog) <5000>' blocks feeding
+    Analog/None<0> objects). BOOLs arrive as 0/1 words (the PLC mirror is
+    generated with word_bools=True); 32-bit types need an unprobed scan
+    enum and are skipped."""
+    from .model import LeafKind
+
+    rw = leaf.access is Access.READ_WRITE
+    if leaf.kind is LeafKind.WORD2:
+        return None, "t2_word2"
+    spec = RtuSpec(DT_ANALOG, LVT_NONE, GROUP_AO if rw else GROUP_AI,
+                   MB_UINT, "holding")
+    if leaf.kind is LeafKind.BIT:
+        return spec, "t2_bool_analog"
+    return spec, ""
+
+
 _WARNING_TEXT = {
     "uint_as_int": (
         "UINT leaves map to T_SPx70_INT objects with INT_TO_UINT/UINT_TO_INT "
@@ -144,6 +165,14 @@ _WARNING_TEXT = {
     "unsupported": (
         "leaves with no SCADAPack object equivalent were skipped "
         "(TIME/DATE/STRING/...)"),
+    "t2_word2": (
+        "32-bit leaves (REAL/DINT/...) cannot be served over the Modbus "
+        "scanner yet - the 32-bit scan data-type enum is unprobed; they "
+        "were skipped (HMI can still read them from the PLC directly)"),
+    "t2_bool_analog": (
+        "BOOL leaves are mirrored to %MW words and served as Analog 0/1 "
+        "objects (probed-safe); native Digital objects on scanned "
+        "register bits need an import probe"),
 }
 
 
@@ -246,6 +275,7 @@ def allocate_rtu(
     workbook_names: set[str] | None = None,
     foreign_points: dict[str, set[int]] | None = None,
     foreign_registers: set[int] | None = None,
+    spec_fn=rtu_spec,
 ) -> tuple[list[RtuAssignment], list[str]]:
     """Assign object names / DNP3 points / Modbus registers, mutating state
     append-only. `foreign_names` (lower-cased), `used_points` (per space)
@@ -374,7 +404,7 @@ def allocate_rtu(
     retired: list[str] = []
 
     for leaf in leaves:
-        spec, category = rtu_spec(leaf)
+        spec, category = spec_fn(leaf)
         if category:
             categories.setdefault(category, []).append(leaf.full_path)
         if spec is None:

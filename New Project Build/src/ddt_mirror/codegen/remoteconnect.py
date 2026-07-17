@@ -107,6 +107,7 @@ _CODE_RE = re.compile(r"<(-?\d+)>\s*$")
 class WorkbookIndex:
     path: str
     names_lower: set[str] = field(default_factory=set)
+    seq_by_name: dict[str, int] = field(default_factory=dict)  # lower name
     used_points: dict[str, set[int]] = field(default_factory=dict)
     used_registers: set[int] = field(default_factory=set)
     # per-row usage, for foreign-collision and duplicate detection
@@ -170,6 +171,7 @@ def read_workbook_index(path: str) -> WorkbookIndex:
         seq = _cell(sheet, r, COL_SEQ)
         if isinstance(seq, (int, float)) and not isinstance(seq, bool):
             idx.max_seq = max(idx.max_seq, int(seq))
+            idx.seq_by_name[name.lower()] = int(seq)
         point = _cell(sheet, r, COL_DNP3_POINT)
         if isinstance(point, (int, float)) and not isinstance(point, bool):
             space = group_space(str(_cell(sheet, r, COL_DNP3_GROUP)))
@@ -214,9 +216,16 @@ def build_object_row(a: RtuAssignment, seq_id: int) -> dict[int, object]:
 
 
 def write_workbook_copy(src_path: str, dst_path: str,
-                        new_rows: list[dict[int, object]]) -> None:
+                        new_rows: list[dict[int, object]],
+                        extra_sheet_rows: dict[str, list[dict[int, object]]]
+                        | None = None) -> None:
     """Value-faithful copy of the workbook with rows appended to the
-    Objects sheet. Formatting is not preserved (the importer reads values)."""
+    Objects sheet (and, via `extra_sheet_rows`, to any other sheet by
+    name). Formatting is not preserved (the importer reads values)."""
+    append = dict(extra_sheet_rows or {})
+    if new_rows:
+        append.setdefault(OBJECTS_SHEET, [])
+        append[OBJECTS_SHEET] = list(new_rows) + append[OBJECTS_SHEET]
     book = xlrd.open_workbook(src_path)
     out = xlwt.Workbook()
     for sheet in book.sheets():
@@ -243,12 +252,15 @@ def write_workbook_copy(src_path: str, dst_path: str,
                         and float(value).is_integer()):
                     value = int(value)
                 ws.write(r, c, value)
-        if sheet.name == OBJECTS_SHEET:
+        rows_to_add = append.get(sheet.name)
+        if rows_to_add:
             row = sheet.nrows
-            for cells in new_rows:
+            for cells in rows_to_add:
                 for c, value in cells.items():
                     if isinstance(value, bool):
                         ws.row(row).set_cell_boolean(c, int(value))
+                    elif value == "":
+                        ws.row(row).set_cell_text(c, "")
                     else:
                         ws.write(row, c, value)
                 row += 1

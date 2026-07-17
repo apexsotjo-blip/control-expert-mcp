@@ -118,12 +118,15 @@ def select_leaves(data: ProjectData, state: SidecarState) -> list[FlatLeaf]:
 
 def build_plan(
     data: ProjectData, state: SidecarState, project_name: str = "",
-    timestamp: str | None = None,
+    timestamp: str | None = None, word_bools: bool = False,
 ) -> tuple[MirrorPlan, AllocState]:
     """Allocate addresses and generate ST + CSV. Pure — no COM calls.
 
     Works on a copy of the allocation state; the caller persists it (via
     apply_plan) only after the project builds and saves successfully.
+
+    `word_bools`: BOOLs mirror into %MW words (scanner topologies) instead
+    of %M coils.
     """
     selected = select_leaves(data, state)
     alloc = copy.deepcopy(state.alloc)
@@ -131,7 +134,8 @@ def build_plan(
     alloc.base_word = state.settings.base_word
     assignments = allocate(alloc, selected,
                            bit_floor=data.reserved.bit_floor,
-                           word_floor=data.reserved.word_floor)
+                           word_floor=data.reserved.word_floor,
+                           word_bools=word_bools)
 
     plan = MirrorPlan(assignments=assignments, warnings=list(data.warnings))
     if data.reserved.max_bit >= 0 or data.reserved.max_word >= 0:

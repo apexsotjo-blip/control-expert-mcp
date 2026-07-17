@@ -18,6 +18,7 @@ class BridgeWorker(QObject):
     opened = Signal(object, str)   # (ProjectData, project_path)
     applied = Signal(object)       # ApplyReport
     transferred = Signal(object)   # TransferReport
+    t2_transferred = Signal(object, object)  # (ApplyReport, T2Report|None)
     failed = Signal(str)
     progress = Signal(str)
 
@@ -69,6 +70,28 @@ class BridgeWorker(QObject):
                 timestamp=_dt.datetime.now().isoformat(timespec="seconds"),
                 progress=self.progress.emit)
             self.transferred.emit(report)
+        except Exception:
+            self.failed.emit(traceback.format_exc())
+
+    @Slot(object, object, object, object, str, str, str, str)
+    def transfer_t2(self, data, plan, new_alloc, state, src_xls: str,
+                    out_dir: str, project_path: str, device: str) -> None:
+        """T2: apply the word-bools PLC mirror into the CE project, then
+        enrich the RemoteConnect workbook with scanner-fed objects."""
+        try:
+            from ..codegen.scanner import export_scanner_bundle
+
+            bridge = self._get_bridge()
+            report = apply_plan(bridge, plan, new_alloc, state, project_path,
+                                progress=self.progress.emit)
+            if not report.ok:
+                self.t2_transferred.emit(report, None)
+                return
+            self.progress.emit("Enriching the RemoteConnect workbook...")
+            t2 = export_scanner_bundle(
+                data, state, plan.assignments, src_xls, out_dir,
+                project_path, device)
+            self.t2_transferred.emit(report, t2)
         except Exception:
             self.failed.emit(traceback.format_exc())
 

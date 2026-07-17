@@ -87,12 +87,17 @@ def allocate(
     selected: list[FlatLeaf],
     bit_floor: int = 0,
     word_floor: int = 0,
+    word_bools: bool = False,
 ) -> list[Assignment]:
     """Assign addresses to the selected leaves, mutating state append-only.
 
     `bit_floor`/`word_floor` raise the starting point for NEW slots above
     addresses the project already uses elsewhere (located variables and
     code literals — brownfield safety). Existing entries are never moved.
+
+    `word_bools` places BOOL leaves in %MW word space (one word each,
+    BOOL_TO_INT-copied) instead of %M coils — required when a Modbus
+    scanner upstream can only read registers (SCADAPack T2 topology).
     """
     if state.next_bit is None:
         state.next_bit = state.base_bit
@@ -118,7 +123,10 @@ def allocate(
             state.dead.append({"key": key, **entry.to_dict()})
             entry = None
         if entry is None:
-            if leaf.kind is LeafKind.BIT:
+            if leaf.kind is LeafKind.BIT and word_bools:
+                address = f"%MW{state.next_word}"
+                state.next_word += 1
+            elif leaf.kind is LeafKind.BIT:
                 address = f"%M{state.next_bit}"
                 state.next_bit += 1
             elif leaf.kind is LeafKind.WORD1:
