@@ -211,6 +211,20 @@ of that format yet; contributions welcome).
 
 ## Running
 
+**Web UI (v2, recommended):** a local browser app — modern, fast, same
+engine. Starts a local-only server (127.0.0.1) and opens your browser:
+
+```
+.venv\Scripts\python -m ddt_mirror.web
+```
+
+Variables page: search + access/state filter chips + by-type/by-instance
+grouping, click an access pill to toggle Read ↔ R/W, bulk actions on the
+filtered set, autosave to the sidecar. PLC Mirror and SCADAPack RTU pages
+mirror the desktop flows (previews are pure; Generate asks first).
+
+**Desktop UI (Qt):**
+
 ```
 .venv\Scripts\python -m ddt_mirror.gui.app
 ```

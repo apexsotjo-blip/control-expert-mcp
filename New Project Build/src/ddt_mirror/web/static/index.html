@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DDT Mirror</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">DDT&nbsp;Mirror <span class="ver" id="ver"></span></div>
+  <div class="project-chip" id="project-chip">no project open</div>
+  <div class="spacer"></div>
+  <button class="btn primary" id="btn-open">Open project…</button>
+</header>
+
+<div class="shell">
+  <nav class="rail">
+    <button class="rail-item active" data-page="variables">🏷️ Variables</button>
+    <button class="rail-item" data-page="plc">🔀 PLC Mirror → Vijeo</button>
+    <button class="rail-item" data-page="rtu">📡 SCADAPack RTU</button>
+    <button class="rail-item" data-page="overview">📋 Overview</button>
+  </nav>
+
+  <main class="content">
+
+    <!-- ============================================== VARIABLES -->
+    <section class="page" id="page-variables">
+      <div class="card toolbar">
+        <input id="search" class="input grow" type="search"
+               placeholder="Search name, type, comment…">
+        <div class="seg" id="seg-access">
+          <button data-v="" class="on">All access</button>
+          <button data-v="read">Read</button>
+          <button data-v="read_write">R/W</button>
+        </div>
+        <div class="seg" id="seg-state">
+          <button data-v="" class="on">All</button>
+          <button data-v="1">Included</button>
+          <button data-v="0">Excluded</button>
+        </div>
+        <div class="seg" id="seg-group">
+          <button data-v="type" class="on">By type</button>
+          <button data-v="instance">By instance</button>
+        </div>
+      </div>
+
+      <div class="card bulkbar">
+        <span class="muted" id="counter">–</span>
+        <span class="savestate" id="savestate"></span>
+        <div class="spacer"></div>
+        <button class="btn" id="bulk-include">Include shown</button>
+        <button class="btn" id="bulk-exclude">Exclude shown</button>
+        <button class="btn" id="bulk-read">Shown → Read</button>
+        <button class="btn" id="bulk-rw">Shown → R/W</button>
+      </div>
+
+      <div class="card table-wrap">
+        <table id="vartable">
+          <thead><tr>
+            <th class="w-check"><input type="checkbox" id="head-check"></th>
+            <th>Tag</th><th>Member</th><th>Type</th>
+            <th>Access</th><th>Comment</th>
+          </tr></thead>
+          <tbody id="varbody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ==================================================== PLC -->
+    <section class="page hidden" id="page-plc">
+      <div class="card toolbar">
+        <button class="btn primary" id="plc-preview">Assign %M/%MW &amp; preview</button>
+        <div class="spacer"></div>
+        <button class="btn" id="vijeo-export" disabled>Export Vijeo files…</button>
+        <button class="btn danger" id="plc-generate" disabled>Generate into project</button>
+      </div>
+      <div class="tabs" id="plc-tabs">
+        <button data-t="st" class="on">ST mirror section</button>
+        <button data-t="vars">New variables</button>
+        <button data-t="csv">Address map</button>
+        <button data-t="warn">Warnings <span class="pill" id="plc-warn-count"></span></button>
+      </div>
+      <div class="card"><pre class="code" id="plc-pane">Run the preview to assign addresses. Nothing touches the project until you press Generate.</pre></div>
+      <div class="result" id="plc-result"></div>
+    </section>
+
+    <!-- ==================================================== RTU -->
+    <section class="page hidden" id="page-rtu">
+      <div class="card form">
+        <label>RemoteConnect export (.xls)
+          <input class="input" id="rtu-src"
+                 placeholder="C:\path\to\RTU_export.xls  (Device → Export in RemoteConnect)">
+        </label>
+        <div class="row">
+          <label>Who runs the program
+            <select class="input" id="rtu-mode">
+              <option value="logic">RTU runs it — Logic Editor objects</option>
+              <option value="scanner">PLC runs it — RTU polls via Modbus scanner</option>
+            </select>
+          </label>
+          <label id="rtu-device-wrap" class="hidden">PLC device in workbook
+            <input class="input" id="rtu-device" placeholder="e.g. PLC_Rack_NIP">
+          </label>
+          <label>HMI indexing
+            <select class="input" id="rtu-index">
+              <option value="0">0-based (40001 = %MW0)</option>
+              <option value="1">1-based (40001 = %MW1)</option>
+            </select>
+          </label>
+        </div>
+        <div class="row">
+          <label class="grow">Output folder <span class="muted">(empty = next to the project)</span>
+            <input class="input" id="rtu-out" placeholder="optional">
+          </label>
+          <div class="actions">
+            <button class="btn primary" id="rtu-assign">Assign &amp; preview</button>
+            <button class="btn danger" id="rtu-generate" disabled>Generate bundle</button>
+          </div>
+        </div>
+      </div>
+      <div class="card"><pre class="code" id="rtu-pane">Provide your RemoteConnect export, then Assign — DNP3 points and registers are packed above everything already in it.</pre></div>
+      <div class="result" id="rtu-result"></div>
+    </section>
+
+    <!-- =============================================== OVERVIEW -->
+    <section class="page hidden" id="page-overview">
+      <div class="cards" id="ov-cards"></div>
+      <div class="card"><h3>Project warnings</h3><pre class="code" id="ov-warnings"></pre></div>
+    </section>
+
+  </main>
+</div>
+
+<footer class="activity" id="activity"><div class="muted">Activity</div></footer>
+
+<div class="modal-back hidden" id="modal">
+  <div class="modal">
+    <h3 id="modal-title"></h3>
+    <p id="modal-body"></p>
+    <input class="input hidden" id="modal-input">
+    <div class="actions">
+      <button class="btn" id="modal-cancel">Cancel</button>
+      <button class="btn primary" id="modal-ok">Continue</button>
+    </div>
+  </div>
+</div>
+
+<div class="toasts" id="toasts"></div>
+<script src="/static/app.js"></script>
+</body>
+</html>
