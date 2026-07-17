@@ -52,3 +52,6 @@ tools/pdf_images/
 *.swp
 .DS_Store
 Thumbs.db
+
+# Local attic - snapshots that may contain customer data, never commit
+_attic/
