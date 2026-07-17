@@ -99,6 +99,22 @@ def test_open_rejects_missing_file(client):
     assert r.status_code == 400
 
 
+def test_browse_lists_drives_dirs_and_filtered_files(client, tmp_path):
+    r = client.get("/api/browse").json()          # drive list
+    assert r["cwd"] == "" and any(d.endswith(":\\") for d in r["dirs"])
+
+    (tmp_path / "sub").mkdir()
+    (tmp_path / "plant.stu").write_bytes(b"x")
+    (tmp_path / "notes.txt").write_bytes(b"x")
+    r = client.get(f"/api/browse?path={tmp_path}&ext=.stu,.sta").json()
+    assert "sub" in r["dirs"]
+    assert [f["name"] for f in r["files"]] == ["plant.stu"]  # .txt filtered
+    assert r["parent"]
+
+    bad = client.get("/api/browse?path=C:\\definitely\\missing\\dir")
+    assert bad.status_code == 400
+
+
 def test_index_served(client):
     r = client.get("/")
     assert r.status_code == 200

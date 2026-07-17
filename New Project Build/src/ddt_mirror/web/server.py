@@ -115,6 +115,49 @@ def activity(after: int = 0) -> dict:
     return {"items": S.activity[after:], "next": len(S.activity)}
 
 
+@app.get("/api/browse")
+def browse(path: str = "", ext: str = "") -> dict:
+    """Server-side file browser (the browser sandbox has no native file
+    dialogs with real paths). path='' lists drives; ext is a comma list
+    of extensions to show ('' = folders only)."""
+    import string
+
+    exts = tuple(e.strip().lower() for e in ext.split(",") if e.strip())
+    if not path:
+        drives = [f"{d}:\\" for d in string.ascii_uppercase
+                  if os.path.exists(f"{d}:\\")]
+        return {"cwd": "", "parent": None,
+                "dirs": drives, "files": []}
+    path = os.path.abspath(path)
+    if not os.path.isdir(path):
+        raise HTTPException(400, f"Not a folder: {path}")
+    dirs, files = [], []
+    try:
+        for name in sorted(os.listdir(path), key=str.lower):
+            if name.startswith((".", "$")) or name.lower() in (
+                    "system volume information",):
+                continue
+            full = os.path.join(path, name)
+            try:
+                if os.path.isdir(full):
+                    dirs.append(name)
+                elif exts and name.lower().endswith(exts):
+                    files.append({
+                        "name": name,
+                        "size": os.path.getsize(full),
+                        "mtime": _dt.datetime.fromtimestamp(
+                            os.path.getmtime(full)).strftime("%Y-%m-%d %H:%M"),
+                    })
+            except OSError:
+                continue
+    except PermissionError:
+        raise HTTPException(403, f"No access to {path}")
+    parent = os.path.dirname(path.rstrip("\\/"))
+    if parent == path.rstrip("\\/"):
+        parent = ""          # drive root -> back to drive list
+    return {"cwd": path, "parent": parent, "dirs": dirs, "files": files}
+
+
 # ---------------------------------------------------------------- project
 
 @app.post("/api/open")

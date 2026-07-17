@@ -49,6 +49,9 @@
         <span class="muted" id="counter">–</span>
         <span class="savestate" id="savestate"></span>
         <div class="spacer"></div>
+        <button class="btn" id="expand-all" title="Expand every group">⊞ Expand</button>
+        <button class="btn" id="collapse-all" title="Collapse every group">⊟ Collapse</button>
+        <span class="vsep"></span>
         <button class="btn" id="bulk-include">Include shown</button>
         <button class="btn" id="bulk-exclude">Exclude shown</button>
         <button class="btn" id="bulk-read">Shown → Read</button>
@@ -89,8 +92,11 @@
     <section class="page hidden" id="page-rtu">
       <div class="card form">
         <label>RemoteConnect export (.xls)
-          <input class="input" id="rtu-src"
-                 placeholder="C:\path\to\RTU_export.xls  (Device → Export in RemoteConnect)">
+          <div class="pathrow">
+            <input class="input grow" id="rtu-src"
+                   placeholder="Your RTU export  (Device → Export in RemoteConnect)">
+            <button class="btn" id="rtu-src-browse">Browse…</button>
+          </div>
         </label>
         <div class="row">
           <label>Who runs the program
@@ -111,7 +117,10 @@
         </div>
         <div class="row">
           <label class="grow">Output folder <span class="muted">(empty = next to the project)</span>
-            <input class="input" id="rtu-out" placeholder="optional">
+            <div class="pathrow">
+              <input class="input grow" id="rtu-out" placeholder="optional">
+              <button class="btn" id="rtu-out-browse">Browse…</button>
+            </div>
           </label>
           <div class="actions">
             <button class="btn primary" id="rtu-assign">Assign &amp; preview</button>
@@ -142,6 +151,19 @@
     <div class="actions">
       <button class="btn" id="modal-cancel">Cancel</button>
       <button class="btn primary" id="modal-ok">Continue</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-back hidden" id="picker">
+  <div class="modal picker">
+    <h3 id="picker-title">Browse</h3>
+    <div class="picker-path" id="picker-path"></div>
+    <div class="picker-list" id="picker-list"></div>
+    <div class="actions">
+      <span class="muted grow" id="picker-hint"></span>
+      <button class="btn" id="picker-cancel">Cancel</button>
+      <button class="btn primary" id="picker-ok" disabled>Select</button>
     </div>
   </div>
 </div>

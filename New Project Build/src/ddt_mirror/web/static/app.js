@@ -7,6 +7,7 @@ const state = {
   selectedTypes: new Set(),
   overrides: {},           // access override keys -> "read"|"read_write"
   filter: { text: "", access: "", state: "", group: "type" },
+  collapsed: new Set(),    // group keys folded shut in the tree
   plcPreview: null,
   plcTab: "st",
   rtuAssigned: false,
@@ -36,6 +37,67 @@ function toast(text, kind) {
   el.textContent = text;
   $("toasts").appendChild(el);
   setTimeout(() => el.remove(), 5200);
+}
+
+/* ------------------------------------------------------ file picker */
+function filePicker(title, exts, dirsOnly, startPath) {
+  return new Promise((resolve) => {
+    let cwd = startPath || localStorage.getItem("lastDir") || "";
+    let selected = null;
+    const back = $("picker"), list = $("picker-list");
+    $("picker-title").textContent = title;
+    $("picker-hint").textContent = dirsOnly
+      ? "Open a folder, then Select chooses it."
+      : `Showing ${exts} files`;
+
+    async function load(path) {
+      try {
+        const d = await api(`/api/browse?path=${encodeURIComponent(path)}` +
+                            `&ext=${dirsOnly ? "" : exts}`);
+        cwd = d.cwd;
+        selected = null;
+        $("picker-ok").disabled = !dirsOnly || !cwd;
+        $("picker-path").textContent = cwd || "This PC";
+        let html = "";
+        if (d.parent !== null && cwd)
+          html += `<div class="picker-item" data-dir="${d.parent}">⬆️ ..</div>`;
+        for (const dir of d.dirs)
+          html += `<div class="picker-item" data-dir="${
+            cwd ? cwd.replace(/\\$/, "") + "\\" + dir : dir}">📁 ${dir}</div>`;
+        for (const f of d.files)
+          html += `<div class="picker-item" data-file="${
+            cwd.replace(/\\$/, "") + "\\" + f.name}">📄 ${f.name}
+            <span class="meta">${f.mtime} · ${(f.size/1024).toFixed(0)} KB</span></div>`;
+        list.innerHTML = html ||
+          `<div class="picker-item muted">Empty folder</div>`;
+      } catch (e) { toast(e.message, "error"); }
+    }
+
+    list.onclick = (ev) => {
+      const el = ev.target.closest(".picker-item");
+      if (!el) return;
+      if (el.dataset.dir !== undefined) { load(el.dataset.dir); return; }
+      list.querySelectorAll(".sel").forEach((x) => x.classList.remove("sel"));
+      el.classList.add("sel");
+      selected = el.dataset.file;
+      $("picker-ok").disabled = false;
+    };
+    list.ondblclick = (ev) => {
+      const el = ev.target.closest(".picker-item");
+      if (el && el.dataset.file) done(true);
+    };
+    const done = (ok) => {
+      back.classList.add("hidden");
+      list.onclick = list.ondblclick = null;
+      $("picker-ok").onclick = $("picker-cancel").onclick = null;
+      if (ok && cwd) localStorage.setItem("lastDir", cwd);
+      resolve(ok ? (dirsOnly ? cwd : selected) : null);
+    };
+    $("picker-ok").onclick = () => done(true);
+    $("picker-cancel").onclick = () => done(false);
+    back.classList.remove("hidden");
+    load(cwd);
+  });
 }
 
 function confirmModal(title, body, withInput, inputValue) {
@@ -133,12 +195,16 @@ function renderTable() {
   for (const [name, members] of groups) {
     const allOn = members.every((r) => r.checked);
     const someOn = members.some((r) => r.checked);
+    const closed = state.collapsed.has(name);
     const insts = byType
       ? new Set(members.map((r) => r.instance)).size + " tags" : "";
-    html += `<tr class="group-row"><td>
+    html += `<tr class="group-row" data-gkey="${name}"><td>
       <input type="checkbox" data-group="${name}"
         ${allOn ? "checked" : ""} ${!allOn && someOn ? "data-mixed=1" : ""}>
-      </td><td colspan="5">${name} <span class="count">${insts}</span></td></tr>`;
+      </td><td colspan="5"><span class="chev ${closed ? "closed" : ""}"
+        >▶</span>${name} <span class="count">${insts} ${
+        closed ? "· " + members.length + " hidden" : ""}</span></td></tr>`;
+    if (closed) continue;
     for (const r of members) {
       html += `<tr class="${r.checked ? "" : "excluded"}" data-path="${r.path}">
         <td><input type="checkbox" data-path="${r.path}"
@@ -205,11 +271,10 @@ async function refreshStatus() {
 }
 
 async function openProject() {
-  const path = await confirmModal(
-    "Open Control Expert project",
-    "Full path to the .stu file. The first open starts Control Expert's " +
-    "automation and can take a minute.",
-    true, localStorage.getItem("lastProject") || "");
+  const last = localStorage.getItem("lastProject");
+  const path = await filePicker(
+    "Open Control Expert project", ".stu,.sta", false,
+    last ? last.substring(0, last.lastIndexOf("\\")) : "");
   if (!path) return;
   const btn = $("btn-open");
   busy(btn, true, "Opening…");
@@ -413,7 +478,16 @@ function wire() {
     const pill = ev.target.closest(".access-pill");
     if (pill) { toggleAccess(pill.dataset.path); return; }
     const cb = ev.target.closest("input[type=checkbox]");
-    if (!cb) return;
+    if (!cb) {
+      const grow = ev.target.closest("tr.group-row");
+      if (grow) {                       // toggle collapse on row click
+        const key = grow.dataset.gkey;
+        if (state.collapsed.has(key)) state.collapsed.delete(key);
+        else state.collapsed.add(key);
+        renderTable();
+      }
+      return;
+    }
     if (cb.dataset.path) setChecked([cb.dataset.path], cb.checked);
     else if (cb.dataset.group !== undefined) {
       const byType = state.filter.group === "type";
@@ -425,6 +499,13 @@ function wire() {
   });
   $("head-check").onchange = (e) =>
     setChecked(visibleRows().map((r) => r.path), e.target.checked);
+  $("expand-all").onclick = () => { state.collapsed.clear(); renderTable(); };
+  $("collapse-all").onclick = () => {
+    const byType = state.filter.group === "type";
+    state.collapsed = new Set(visibleRows().map((r) =>
+      byType ? r.group : (r.member ? r.instance : "— standalone —")));
+    renderTable();
+  };
   $("bulk-include").onclick = () =>
     setChecked(visibleRows().map((r) => r.path), true);
   $("bulk-exclude").onclick = () =>
@@ -455,6 +536,14 @@ function wire() {
     renderPlcPane();
   });
 
+  $("rtu-src-browse").onclick = async () => {
+    const p = await filePicker("RemoteConnect export", ".xls", false);
+    if (p) { $("rtu-src").value = p; $("rtu-generate").disabled = true; }
+  };
+  $("rtu-out-browse").onclick = async () => {
+    const p = await filePicker("Output folder", "", true);
+    if (p) $("rtu-out").value = p;
+  };
   $("rtu-mode").onchange = () => {
     $("rtu-device-wrap").classList.toggle(
       "hidden", $("rtu-mode").value !== "scanner");
