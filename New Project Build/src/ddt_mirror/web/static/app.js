@@ -187,8 +187,101 @@ function groupKey(r) {
     ? r.group : (r.member ? r.instance : "— standalone —");
 }
 
+/* Build a real tree: group -> nested member segments (DDT-in-DDT nests). */
+function buildTree(members, byType) {
+  const root = { children: new Map(), leaves: [] };
+  for (const r of members) {
+    const segs = r.member ? r.member.split(".") : [];
+    let node = root;
+    for (const seg of segs.slice(0, -1)) {
+      if (!node.children.has(seg))
+        node.children.set(seg, { children: new Map(), leaves: [] });
+      node = node.children.get(seg);
+    }
+    node.leaves.push(r);
+  }
+  return root;
+}
+
+function subtreeRows(node) {
+  let out = [...node.leaves];
+  for (const child of node.children.values())
+    out = out.concat(subtreeRows(child));
+  return out;
+}
+
+function subtreePaths(node) {
+  const out = [];
+  for (const r of subtreeRows(node))
+    if (r._all) out.push(...r._all);
+    else out.push(r.path);
+  return out;
+}
+
+const CHEV = `<svg class="chev-i" viewBox="0 0 16 16" width="12" height="12">
+  <path d="M6 4l4 4-4 4" fill="none" stroke="currentColor"
+   stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+
+function nodeRow(key, label, node, depth, extra) {
+  const paths = subtreePaths(node);
+  const pathSet = new Set(paths);
+  const rows = state.rows.filter((r) => pathSet.has(r.path));
+  const allOn = rows.every((r) => r.checked);
+  const someOn = rows.some((r) => r.checked);
+  const closed = state.collapsed.has(key);
+  return `<tr class="node-row depth-${depth}" data-node="${key}">
+    <td><input type="checkbox" data-subtree="${paths.join(";")}"
+      data-nodekey="${key}"
+      ${allOn ? "checked" : ""} ${!allOn && someOn ? "data-mixed=1" : ""}></td>
+    <td colspan="5"><span class="indents">${
+      "<span class='guide'></span>".repeat(depth)}</span
+    ><span class="chev ${closed ? "closed" : ""}">${CHEV}</span
+    ><span class="node-label">${label}</span>${extra || ""}
+    <span class="count">${closed ? rows.length + " hidden" : ""}</span>
+    </td></tr>`;
+}
+
+function leafRow(r, depth, showInstance) {
+  const parents = r._parents || "";
+  const multi = r._all && r._all.length > 1;
+  const allOn = multi ? r._all.every((p) =>
+    state.rows.find((x) => x.path === p).checked) : r.checked;
+  const someOn = multi ? r._all.some((p) =>
+    state.rows.find((x) => x.path === p).checked) : r.checked;
+  const label = showInstance ? r.instance : r.member.split(".").pop();
+  const inst = multi
+    ? ` <span class="count">×${r._all.length}</span>` : "";
+  return `<tr class="leaf ${allOn ? "" : "excluded"}"
+      data-path="${r.path}" data-parents="${parents}">
+    <td><input type="checkbox" data-path="${r.path}"
+         ${multi ? `data-all="${r._all.join(";")}"` : ""}
+         ${allOn ? "checked" : ""}
+         ${!allOn && someOn ? "data-mixed=1" : ""}></td>
+    <td class="tag-name"><span class="indents">${
+      "<span class='guide'></span>".repeat(depth)}</span>${label}${inst}</td>
+    <td>${r.member || "<span class='muted'>—</span>"}</td>
+    <td><span class="type-badge">${r.type}</span></td>
+    <td>${accessPill(r)}</td>
+    <td class="muted comment">${r.comment || ""}</td></tr>`;
+}
+
+function renderNode(parts, node, keyPrefix, depth, byType) {
+  for (const [seg, child] of node.children) {
+    const key = keyPrefix + "/" + seg;
+    parts.push(nodeRow(key, seg, child, depth));
+    if (state.collapsed.has(key)) continue;
+    // tag ancestors on leaves for targeted tri-state refresh
+    for (const r of subtreeRows(child))
+      r._parents = (r._parents ? r._parents + ";" : "") + key;
+    renderNode(parts, child, key, depth + 1, byType);
+  }
+  for (const r of node.leaves)
+    parts.push(leafRow(r, depth, !r.member));
+}
+
 function renderTable() {
   const rows = visibleRows();
+  for (const r of rows) r._parents = "";
   const byType = state.filter.group === "type";
   const body = $("varbody");
   const groups = new Map();
@@ -199,30 +292,33 @@ function renderTable() {
   }
   const parts = [];
   for (const [name, members] of groups) {
-    const allOn = members.every((r) => r.checked);
-    const someOn = members.some((r) => r.checked);
-    const closed = state.collapsed.has(name);
+    const gkey = "g:" + name;
     const star = byType && state.libraryTypes.has(name)
       ? ` <span class="star" title="Has saved global defaults">★</span>` : "";
     const insts = byType
-      ? new Set(members.map((r) => r.instance)).size + " tags" : "";
-    parts.push(`<tr class="group-row" data-gkey="${name}"><td>
-      <input type="checkbox" data-group="${name}"
-        ${allOn ? "checked" : ""} ${!allOn && someOn ? "data-mixed=1" : ""}>
-      </td><td colspan="5"><span class="chev ${closed ? "closed" : ""}"
-        >▶</span>${name}${star} <span class="count">${insts} ${
-        closed ? "· " + members.length + " hidden" : ""}</span></td></tr>`);
-    if (closed) continue;
-    for (const r of members) {
-      parts.push(`<tr class="${r.checked ? "" : "excluded"}" data-path="${r.path}">
-        <td><input type="checkbox" data-path="${r.path}"
-             ${r.checked ? "checked" : ""}></td>
-        <td class="tag-name">${r.instance}</td>
-        <td>${r.member || "<span class='muted'>—</span>"}</td>
-        <td><span class="type-badge">${r.type}</span></td>
-        <td>${accessPill(r)}</td>
-        <td class="muted">${r.comment || ""}</td></tr>`);
+      ? `<span class="count">${new Set(
+          members.map((r) => r.instance)).size} tags</span>` : "";
+    // by-type: one row per DDT MEMBER, acting on every instance at once
+    let treeRows = members;
+    if (byType) {
+      const reps = new Map();
+      treeRows = [];
+      for (const r of members) {
+        if (!r.ddt_type) { r._all = null; treeRows.push(r); continue; }
+        if (reps.has(r.type_key)) reps.get(r.type_key)._all.push(r.path);
+        else {
+          const rep = Object.assign({}, r, { _all: [r.path] });
+          reps.set(r.type_key, rep);
+          treeRows.push(rep);
+        }
+      }
     }
+    const tree = buildTree(treeRows, byType);
+    parts.push(nodeRow(gkey, name, tree, 0, star + " " + insts)
+      .replace("node-row depth-0", "node-row group depth-0"));
+    if (state.collapsed.has(gkey)) continue;
+    for (const r of treeRows) r._parents = gkey;
+    renderNode(parts, tree, gkey, 1, byType);
   }
   body.innerHTML = parts.join("") || `<tr><td colspan="6" class="muted"
      style="padding:30px;text-align:center">No variables match.</td></tr>`;
@@ -237,37 +333,40 @@ function updateCounter(shown) {
     `${state.rows.filter((r) => r.checked).length} included`;
 }
 
-function refreshGroupHeader(key) {
-  const cb = $("varbody").querySelector(
-    `input[data-group="${CSS.escape(key)}"]`);
-  if (!cb) return;
-  const members = state.rows.filter(
-    (r) => state.selectedTypes.has(r.group) && groupKey(r) === key);
-  const allOn = members.every((r) => r.checked);
-  cb.checked = allOn;
-  cb.indeterminate = !allOn && members.some((r) => r.checked);
+function refreshAncestors(parentsAttr) {
+  if (!parentsAttr) return;
+  const body = $("varbody");
+  for (const key of parentsAttr.split(";")) {
+    const cb = body.querySelector(
+      `input[data-nodekey="${CSS.escape(key)}"]`);
+    if (!cb) continue;
+    const paths = (cb.dataset.subtree || "").split(";").filter(Boolean);
+    const rows = state.rows.filter((r) => paths.includes(r.path));
+    const allOn = rows.every((r) => r.checked);
+    cb.checked = allOn;
+    cb.indeterminate = !allOn && rows.some((r) => r.checked);
+  }
 }
 
 /* Targeted update: flip N rows in place; full re-render only for big sets
    or when a state filter would change which rows are visible. */
-function setChecked(paths, on) {
+function setChecked(paths, on, force) {
   const set = new Set(paths);
   for (const r of state.rows) if (set.has(r.path)) r.checked = on;
-  if (paths.length > 200 || state.filter.state !== "") {
+  if (force || paths.length > 200 || state.filter.state !== "") {
     renderTable();
   } else {
     const body = $("varbody");
-    const touched = new Set();
+    const parents = new Set();
     for (const p of paths) {
       const tr = body.querySelector(`tr[data-path="${CSS.escape(p)}"]`);
       if (!tr) continue;
       tr.classList.toggle("excluded", !on);
       const cb = tr.querySelector("input[type=checkbox]");
       if (cb) cb.checked = on;
-      const row = state.rows.find((r) => r.path === p);
-      if (row) touched.add(groupKey(row));
+      if (tr.dataset.parents) parents.add(tr.dataset.parents);
     }
-    touched.forEach(refreshGroupHeader);
+    parents.forEach(refreshAncestors);
     updateCounter();
   }
   scheduleSave();
@@ -547,31 +646,28 @@ function wire() {
     if (pill) { toggleAccess(pill.dataset.path); return; }
     const cb = ev.target.closest("input[type=checkbox]");
     if (!cb) {
-      const grow = ev.target.closest("tr.group-row");
-      if (grow) {                       // toggle collapse on row click
-        const key = grow.dataset.gkey;
+      const nrow = ev.target.closest("tr.node-row");
+      if (nrow) {                       // toggle collapse on row click
+        const key = nrow.dataset.node;
         if (state.collapsed.has(key)) state.collapsed.delete(key);
         else state.collapsed.add(key);
         renderTable();
       }
       return;
     }
-    if (cb.dataset.path) setChecked([cb.dataset.path], cb.checked);
-    else if (cb.dataset.group !== undefined) {
-      const byType = state.filter.group === "type";
-      const members = visibleRows().filter((r) =>
-        (byType ? r.group : (r.member ? r.instance : "— standalone —"))
-          === cb.dataset.group);
-      setChecked(members.map((r) => r.path), cb.checked);
-    }
+    if (cb.dataset.path)
+      setChecked(cb.dataset.all
+        ? cb.dataset.all.split(";") : [cb.dataset.path], cb.checked);
+    else if (cb.dataset.subtree !== undefined)
+      setChecked(cb.dataset.subtree.split(";").filter(Boolean),
+                 cb.checked, true);
   });
   $("head-check").onchange = (e) =>
     setChecked(visibleRows().map((r) => r.path), e.target.checked);
   $("expand-all").onclick = () => { state.collapsed.clear(); renderTable(); };
   $("collapse-all").onclick = () => {
-    const byType = state.filter.group === "type";
-    state.collapsed = new Set(visibleRows().map((r) =>
-      byType ? r.group : (r.member ? r.instance : "— standalone —")));
+    state.collapsed = new Set(
+      visibleRows().map((r) => "g:" + groupKey(r)));
     renderTable();
   };
   $("bulk-include").onclick = () =>
