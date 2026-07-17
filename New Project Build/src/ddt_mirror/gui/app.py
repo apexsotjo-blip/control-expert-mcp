@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
 from .. import __version__
 from ..core.adopt import load_or_recover_sidecar
 from ..core.engine import build_plan, type_summary
+from .theme import GREEN, ORANGE, RED, apply_theme
 from .tree import (
     AccessDelegate, COL_ACCESS, COL_ADDRESS, COL_MEMBER,
     build_member_model, collect_deselected, wire_check_propagation,
@@ -76,6 +77,8 @@ class MainWindow(QMainWindow):
 
         central = QWidget()
         outer = QVBoxLayout(central)
+        outer.setContentsMargins(14, 12, 14, 8)
+        outer.setSpacing(10)
         outer.addLayout(self._build_header())
 
         split = QSplitter(Qt.Horizontal)
@@ -92,6 +95,7 @@ class MainWindow(QMainWindow):
         self.activity = QPlainTextEdit(readOnly=True)
         self.activity.setMaximumHeight(140)
         self.activity.setPlaceholderText("Activity log")
+        self.activity.setProperty("class", "mono")
         outer.addWidget(self.activity)
 
         self.setCentralWidget(central)
@@ -115,7 +119,12 @@ class MainWindow(QMainWindow):
 
     def _build_header(self) -> QHBoxLayout:
         row = QHBoxLayout()
+        row.setSpacing(12)
+        title = QLabel(f"<b style='font-size:13pt'>DDT Mirror</b> "
+                       f"<span style='color:#8b90a0'>v{__version__}</span>")
+        row.addWidget(title)
         self.open_btn = QPushButton("Open project (.stu)...")
+        self.open_btn.setProperty("kind", "primary")
         self.open_btn.clicked.connect(self._open_clicked)
         row.addWidget(self.open_btn)
         self.project_label = QLabel("<i>no project open</i>")
@@ -171,17 +180,21 @@ class MainWindow(QMainWindow):
         self.types_list.itemChanged.connect(self._on_type_toggled)
         lay.addWidget(self.types_list)
 
-        lay.addWidget(QLabel(
+        members_hdr = QLabel(
             "<b>2 — Members and access</b> "
-            "<span style='color:gray'>(uncheck what the HMI does not need; "
-            "double-click Access to change Read / Read-Write)</span>"))
+            "<span style='color:#8b90a0'>(uncheck what the HMI does not need; "
+            "double-click Access to change Read / Read-Write)</span>")
+        members_hdr.setWordWrap(True)
+        lay.addWidget(members_hdr)
         self.filter_edit = QLineEdit()
         self.filter_edit.setPlaceholderText("Filter members...")
         self.filter_edit.textChanged.connect(self._apply_filter)
         lay.addWidget(self.filter_edit)
-        self.type_mode_cb = QCheckBox(
-            "Type-level editing: changes apply to ALL variables of the "
-            "same DDT type")
+        self.type_mode_cb = QCheckBox("Type-level editing")
+        self.type_mode_cb.setToolTip(
+            "Checked: member add/remove and access changes apply to ALL "
+            "variables of the same DDT type.\nUnchecked: manual per-variable "
+            "selection.")
         self.type_mode_cb.setChecked(True)
         self.type_mode_cb.toggled.connect(self._type_mode_toggled)
         lay.addWidget(self.type_mode_cb)
@@ -351,6 +364,7 @@ class MainWindow(QMainWindow):
         lay.addWidget(self.overview_label)
         lay.addWidget(QLabel("<b>Project warnings</b>"))
         self.overview_warnings = QPlainTextEdit(readOnly=True)
+        self.overview_warnings.setProperty("class", "mono")
         lay.addWidget(self.overview_warnings, stretch=1)
         return page
 
@@ -391,7 +405,7 @@ class MainWindow(QMainWindow):
         self.vijeo_btn.setEnabled(False)
         top.addWidget(self.vijeo_btn)
         self.generate_btn = QPushButton("Generate into project")
-        self.generate_btn.setStyleSheet("font-weight: bold;")
+        self.generate_btn.setProperty("kind", "primary")
         self.generate_btn.clicked.connect(self._generate_clicked)
         self.generate_btn.setEnabled(False)
         top.addWidget(self.generate_btn)
@@ -405,6 +419,7 @@ class MainWindow(QMainWindow):
         for w in (self.preview_st, self.preview_vars, self.preview_csv,
                   self.preview_warn):
             w.setLineWrapMode(QPlainTextEdit.NoWrap)
+            w.setProperty("class", "mono")
         self.plc_tabs.addTab(self.preview_st, "ST mirror section")
         self.plc_tabs.addTab(self.preview_vars, "New variables")
         self.plc_tabs.addTab(self.preview_csv, "Address map (CSV)")
@@ -505,14 +520,14 @@ class MainWindow(QMainWindow):
         self.generate_btn.setEnabled(True)
         if report.ok:
             text = (
-                f"<b style='color:green'>Done.</b> Created "
+                f"<b style='color:{GREEN}'>Done.</b> Created "
                 f"{len(report.created_vars)} variables "
                 f"(skipped {len(report.skipped_vars)} existing), build "
                 f"{report.build_state}, project saved.<br>"
                 f"Address map: {report.csv_path or '(not written)'}<br>"
                 f"Sidecar: {report.sidecar_path}")
             for w in report.warnings:
-                text += f"<br><b style='color:darkorange'>Warning:</b> {w}"
+                text += f"<br><b style='color:{ORANGE}'>Warning:</b> {w}"
             self.result_label.setText(text)
             self._log(f"PLC generate OK: {len(report.created_vars)} created, "
                       f"{len(report.skipped_vars)} existing, build "
@@ -522,7 +537,7 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("Generation complete.")
         else:
             self.result_label.setText(
-                f"<b style='color:red'>Failed:</b> {report.error}")
+                f"<b style='color:{RED}'>Failed:</b> {report.error}")
             self._log(f"PLC generate FAILED: {report.error}")
             if report.build_output:
                 self.preview_warn.setPlainText(report.build_output)
@@ -536,10 +551,12 @@ class MainWindow(QMainWindow):
     def _build_rtu_tab(self) -> QWidget:
         page = QWidget()
         lay = QVBoxLayout(page)
-        lay.addWidget(QLabel(
-            "<span style='color:gray'>DNP3 points and RTU Modbus registers "
+        intro = QLabel(
+            "<span style='color:#8b90a0'>DNP3 points and RTU Modbus registers "
             "are assigned <b>above everything already in your RemoteConnect "
-            "export</b> — provide it first.</span>"))
+            "export</b> — provide it first.</span>")
+        intro.setWordWrap(True)
+        lay.addWidget(intro)
 
         row = QHBoxLayout()
         row.addWidget(QLabel("RemoteConnect export:"))
@@ -559,6 +576,9 @@ class MainWindow(QMainWindow):
             "RTU runs it — objects bind to Logic Editor variables",
             "PLC runs it — RTU polls the PLC via Modbus scanner",
         ])
+        self.rtu_mode_combo.setSizeAdjustPolicy(
+            QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        self.rtu_mode_combo.setMinimumContentsLength(28)
         self.rtu_mode_combo.currentIndexChanged.connect(self._rtu_mode_changed)
         mode_row.addWidget(self.rtu_mode_combo)
         self.rtu_device_label = QLabel("PLC device in workbook:")
@@ -573,13 +593,16 @@ class MainWindow(QMainWindow):
         opts.addWidget(QLabel("HMI address indexing:"))
         self.rtu_index_combo = QComboBox()
         self.rtu_index_combo.addItems(self._INDEX_OPTIONS)
+        self.rtu_index_combo.setSizeAdjustPolicy(
+            QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        self.rtu_index_combo.setMinimumContentsLength(20)
         opts.addWidget(self.rtu_index_combo)
         opts.addStretch()
         self.assign_btn = QPushButton("Assign addresses && preview")
         self.assign_btn.clicked.connect(self._rtu_assign)
         opts.addWidget(self.assign_btn)
         self.rtu_generate_btn = QPushButton("Generate transfer bundle")
-        self.rtu_generate_btn.setStyleSheet("font-weight: bold;")
+        self.rtu_generate_btn.setProperty("kind", "primary")
         self.rtu_generate_btn.setEnabled(False)
         self.rtu_generate_btn.clicked.connect(self._rtu_generate)
         opts.addWidget(self.rtu_generate_btn)
@@ -587,6 +610,7 @@ class MainWindow(QMainWindow):
 
         self.rtu_preview = QPlainTextEdit(readOnly=True)
         self.rtu_preview.setLineWrapMode(QPlainTextEdit.NoWrap)
+        self.rtu_preview.setProperty("class", "mono")
         self.rtu_preview.setPlaceholderText(
             'Pick your RemoteConnect export, then "Assign addresses & '
             'preview".')
@@ -751,7 +775,7 @@ class MainWindow(QMainWindow):
         for w in report.warnings:
             self._log(f"  warning: {w}")
         self.rtu_result.setText(
-            "<b style='color:green'>Bundle complete.</b> "
+            f"<b style='color:{GREEN}'>Bundle complete.</b> "
             "In RemoteConnect: import the .xls; in the Logic Editor import "
             "the .xsy, then the section files in numbered order; create a "
             "final ST section and paste the mirror .st; build. Object "
@@ -767,7 +791,7 @@ class MainWindow(QMainWindow):
         self.rtu_generate_btn.setEnabled(True)
         if not apply_report.ok:
             self.rtu_result.setText(
-                f"<b style='color:red'>PLC mirror failed:</b> "
+                f"<b style='color:{RED}'>PLC mirror failed:</b> "
                 f"{apply_report.error} — the workbook was NOT modified.")
             self._log(f"T2 FAILED at the PLC step: {apply_report.error}")
             QMessageBox.critical(
@@ -792,7 +816,7 @@ class MainWindow(QMainWindow):
         for w in warnings:
             self._log(f"  warning: {w}")
         self.rtu_result.setText(
-            "<b style='color:green'>T2 bundle complete.</b> Import the .xls "
+            f"<b style='color:{GREEN}'>T2 bundle complete.</b> Import the .xls "
             "in RemoteConnect and write to the device — the scanner starts "
             "polling the PLC; no Logic Editor program is needed. Point the "
             "HMI at the RtuRegister/HmiAddress column, GeoSCADA at the DNP3 "
@@ -828,6 +852,7 @@ class MainWindow(QMainWindow):
 
 def main() -> None:
     app = QApplication(sys.argv)
+    apply_theme(app)
     win = MainWindow()
     win.show()
     sys.exit(app.exec())

@@ -28,6 +28,7 @@ from ddt_mirror.core.flatten import flatten_tags
 from ddt_mirror.core.persist import SidecarState
 from ddt_mirror.core.xsy_parser import parse_xsy
 from ddt_mirror.gui.app import MainWindow
+from ddt_mirror.gui.theme import apply_theme
 from ddt_mirror.gui.tree import COL_ACCESS, COL_ADDRESS, COL_MEMBER, LEAF_ROLE
 
 FIXTURE = os.path.join(os.path.dirname(__file__), "..", "tests", "fixtures",
@@ -43,6 +44,7 @@ def check(cond, msg):
 
 def main() -> None:
     app = QApplication(sys.argv)
+    apply_theme(app)  # exercise the design system in the smoke too
     win = MainWindow()
 
     with open(FIXTURE, encoding="utf-8") as fh:
