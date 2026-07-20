@@ -3,3 +3,9 @@ __pycache__/
 *.egg-info/
 _e2e_work/
 *.pyc
+
+# Installer build outputs and third-party tooling - regenerate, don't commit
+installer/dist/
+installer/build/
+installer/tools/
+installer/*.exe

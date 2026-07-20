@@ -223,6 +223,12 @@ grouping, click an access pill to toggle Read ↔ R/W, bulk actions on the
 filtered set, autosave to the sidecar. PLC Mirror and SCADAPack RTU pages
 mirror the desktop flows (previews are pure; Generate asks first).
 
+**Installing it on another PC (no Python needed):** build
+`DDTMirror-Setup-<version>.exe` — see [installer/README.md](installer/README.md).
+It's a standalone installer (no admin rights required) that puts a
+Desktop + Start Menu shortcut on the target machine; that machine still
+needs Control Expert installed for the PLC/RTU generate steps.
+
 **Desktop UI (Qt):**
 
 ```
