@@ -17,12 +17,15 @@ dist/
 *.bak
 *.BAK
 
+# DDT Mirror moved to its own repository (github.com/apexsotjo-blip/
+# ddt-mirror-app, private) - full history preserved via git subtree split.
+# The folder stays on disk as an independent git repo; this parent repo no
+# longer tracks it.
+New Project Build/
+
 # Proprietary / customer data — NEVER commit
 # (real project exports learned via the read tools during the recreation test)
 New Project Data/
-New Project Build/HMI_SAMPLES/
-New Project Build/P24-IWT-03-SCADAPack_*/
-New Project Build/RC_STU_PROBES/
 remoteconnect.xls
 RC_PROBE_import.xls
 *_ImportLog.txt
