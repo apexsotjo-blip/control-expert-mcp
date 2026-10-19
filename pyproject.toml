@@ -1,6 +1,6 @@
 [project]
 name = "control-expert-mcp"
-version = "0.9.0"
+version = "0.10.0"
 description = "MCP server exposing EcoStruxure Control Expert (Unity Pro) to AI agents via the UDE COM automation API"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -21,3 +21,6 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+control_expert_mcp = ["ffb_catalog.json"]

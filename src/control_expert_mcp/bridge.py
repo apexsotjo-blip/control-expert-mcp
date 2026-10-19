@@ -31,6 +31,13 @@ log = logging.getLogger(__name__)
 # automation broker on machines where RemoteConnect is installed.
 BROKER_PROGID = os.environ.get("CE_MCP_BROKER_PROGID",
                                "PSBroker.PServerBroker.1")
+# Optional OEM product context (e.g. the SCADAPack x70 Logic Editor used by RemoteConnect):
+# set CE_MCP_XPDF_CONTEXT to the product's .xpdf file to open/create projects in that context.
+BROKER_CONTEXT_PROGID = os.environ.get(
+    "CE_MCP_BROKER_CONTEXT_PROGID", "PServerBroker.PServerBrokerContext.1"
+)
+XPDF_CONTEXT_PATH = os.environ.get("CE_MCP_XPDF_CONTEXT", "").strip()
+LIBSET_VERSION = os.environ.get("CE_MCP_LIBSET_VERSION", "").strip()
 
 # Inline-return guard: exports bigger than this are left on disk instead
 MAX_INLINE_BYTES = 400_000
@@ -181,6 +188,54 @@ class ControlExpertBridge:
                 "Is EcoStruxure Control Expert (or Unity Pro) installed on this machine?"
             ) from exc
 
+    @staticmethod
+    def _broker_context():
+        """Create the optional OEM product context (CE_MCP_XPDF_CONTEXT), e.g. UnitySoControl.
+
+        XpdfContext is a BSTR buffer, not a path.  RemoteConnect installs the
+        encrypted SCADAPack XPDF payload under CommonControlExpert.
+        """
+        if not XPDF_CONTEXT_PATH:
+            return None
+        import win32com.client
+
+        if not os.path.isfile(XPDF_CONTEXT_PATH):
+            raise CEError(f"XPDF product context file not found: {XPDF_CONTEXT_PATH}")
+        try:
+            context = win32com.client.Dispatch(BROKER_CONTEXT_PROGID)
+            context.XpdfContext = _read_text_file(XPDF_CONTEXT_PATH)
+            if LIBSET_VERSION:
+                context.LibSetVersion = LIBSET_VERSION
+            return context
+        except Exception as exc:
+            raise CEError(
+                f"Cannot create the broker product context: {_format_com_error(exc)}"
+            ) from exc
+
+    def _open_native_application(self, broker, path: str):
+        context = self._broker_context()
+        if context is None:
+            return broker.OpenApplication(path)
+        result = broker.OpenApplicationWithPServerBrokerContext(path, context)
+        # With an [out] IApplication parameter pywin32 versions may return the
+        # application directly or wrap outputs in a tuple.
+        if isinstance(result, tuple):
+            result = next((item for item in result if item is not None), None)
+        if result is None:
+            raise CEError("The broker returned no application object for the product context.")
+        return result
+
+    def _new_native_application(self, broker):
+        context = self._broker_context()
+        if context is None:
+            return broker.NewApplication()
+        result = broker.NewApplicationWithPServerBrokerContext(context)
+        if isinstance(result, tuple):
+            result = next((item for item in result if item is not None), None)
+        if result is None:
+            raise CEError("The broker returned no application object for the product context.")
+        return result
+
     def _ensure_app(self):
         if self._app is None:
             raise CEError("No project is open. Use open_project or new_project first.")
@@ -243,7 +298,8 @@ class ControlExpertBridge:
         return self._run(self._do_get_status)
 
     def _do_get_status(self) -> dict:
-        status: dict[str, Any] = {"broker_progid": BROKER_PROGID}
+        status: dict[str, Any] = {"broker_progid": BROKER_PROGID,
+                                  "oem_context": XPDF_CONTEXT_PATH or None}
         if self._app is None:
             status["session"] = "no application open"
             return status
@@ -301,9 +357,9 @@ class ControlExpertBridge:
         self._do_close(False)
         broker = self._broker()
         if ext in (".stu", ".sta"):
-            self._app = broker.OpenApplication(path)
+            self._app = self._open_native_application(broker, path)
         elif ext in (".xef", ".zef"):
-            self._app = broker.NewApplication()
+            self._app = self._new_native_application(broker)
             self._app.ImportProject(path)
         else:
             raise CEError(
@@ -325,7 +381,7 @@ class ControlExpertBridge:
             )
         self._do_close(False)
         broker = self._broker()
-        self._app = broker.NewApplication()
+        self._app = self._new_native_application(broker)
         try:
             # Control Expert ignores the name argument here (the project is named
             # by its .stu file at save time), so we pass a fixed placeholder.
@@ -367,9 +423,17 @@ class ControlExpertBridge:
         self._do_close(False)
         broker = self._broker()
         ctx = win32com.client.Dispatch("PServerBroker.PServerBrokerContext.1")
+        # The COM property takes the encrypted XPDF buffer, not its filename.
+        if os.path.isfile(xpdf_context):
+            xpdf_context = _read_text_file(xpdf_context)
         ctx.XpdfContext = xpdf_context
-        # [out] ppApp is mapped to the return value by pywin32.
-        self._app = broker.NewApplicationWithPServerBrokerContext(ctx)
+        # [out] ppApp is mapped to the return value by pywin32 (some versions wrap it in a tuple).
+        result = broker.NewApplicationWithPServerBrokerContext(ctx)
+        if isinstance(result, tuple):
+            result = next((item for item in result if item is not None), None)
+        if result is None:
+            raise CEError("The SCADAPack broker returned no application object.")
+        self._app = result
         if settings_xso:
             xso_path = self._temp_path(".xso")
             with open(xso_path, "w", encoding="utf-8") as fh:
@@ -439,24 +503,39 @@ class ControlExpertBridge:
             return {"closed": False, "reason": "no application open"}
         if save:
             self._do_save_project(None)
-        self._do_close(False)
-        return {"closed": True}
+        released = self._do_close(False)
+        result: dict[str, Any] = {"closed": True}
+        if released is False:
+            result["warning"] = (
+                "Control Expert did not confirm ProjectClose (COM references were still held). "
+                "The .stu may stay locked by the ControlExpert server process until this MCP "
+                "server exits; reopen it from this server or restart the server before "
+                "copying/moving the file.")
+        return result
 
-    def _do_close(self, _save: bool) -> None:
-        if self._app is not None:
-            # The server refuses to close while clients still hold project COM
-            # references — drop the cached project and lingering wrappers first.
-            import gc
+    def _do_close(self, _save: bool) -> bool | None:
+        """Close the open application. Returns True when ProjectClose succeeded, False when the
+        server refused (the project file may stay locked), None when nothing was open."""
+        if self._app is None:
+            return None
+        # The server refuses to close while clients still hold project COM
+        # references — drop the cached project and lingering wrappers first.
+        import gc
 
-            self._proj = None
+        self._proj = None
+        released = False
+        for _ in range(2):                      # second try after another collection pass
             gc.collect()
             try:
                 self._app.ProjectClose()
+                released = True
+                break
             except Exception:
-                pass
-            self._app = None
-            self._project_path = None
-            gc.collect()
+                continue
+        self._app = None
+        self._project_path = None
+        gc.collect()
+        return released
 
     # --------------------------------------------------------- public: build
 
@@ -950,7 +1029,7 @@ class ControlExpertBridge:
                 xml_content, stripped_devddts = self._strip_managed_devddt_decls(xml_content)
             suffix = self._detect_suffix(xml_content, kind)
             file_path = self._temp_path(suffix)
-            with open(file_path, "w", encoding="utf-8") as f:
+            with open(file_path, "w", encoding="utf-8", newline="") as f:  # verbatim: text mode would turn CRLF into CR CR LF (doubled blank lines in ST)
                 f.write(xml_content)
             cleanup = True
         elif file_path:
@@ -963,7 +1042,7 @@ class ControlExpertBridge:
                 cleaned, stripped_devddts = self._strip_managed_devddt_decls(raw)
                 if stripped_devddts:
                     file_path = self._temp_path(os.path.splitext(file_path)[1] or ".xml")
-                    with open(file_path, "w", encoding="utf-8") as f:
+                    with open(file_path, "w", encoding="utf-8", newline="") as f:  # verbatim: text mode would turn CRLF into CR CR LF (doubled blank lines in ST)
                         f.write(cleaned)
                     cleanup = True
         else:
@@ -972,7 +1051,7 @@ class ControlExpertBridge:
         try:
             errors: list[str] = []
 
-            def attempt() -> dict | None:
+            def project_import() -> dict | None:
                 # Project-level import understands every exchange format and
                 # routes sections to the task named inside the file. The
                 # second parameter is an [out] status in some versions, so try
@@ -984,12 +1063,17 @@ class ControlExpertBridge:
                     except Exception as exc:  # noqa: BLE001
                         errors.append(f"project import: {_format_com_error(exc)}")
                         del exc
+                return None
+
+            def attempt() -> dict | None:
+                # Kinds with a target collection go there FIRST: project import
+                # never accepts a section file, and its two failed attempts used
+                # to lead every error message with '<unknown>.Import' noise.
+                # Project import stays the fallback (and the path for other kinds).
                 coll = None
                 if kind == "section":
-                    if not task_name:
-                        return None
-                    task = self._find_task(proj, task_name)
-                    coll = task.Sections
+                    if task_name:
+                        coll = self._find_task(proj, task_name).Sections
                 elif kind == "variables":
                     coll = proj.Variables
                 elif kind == "dfb":
@@ -998,8 +1082,8 @@ class ControlExpertBridge:
                     coll = proj.Ddts
                 elif kind == "configuration":
                     coll = proj.Configuration
-                else:
-                    return None
+                if coll is None:
+                    return project_import()
                 try:
                     coll.Import(file_path)
                     return {"imported": kind, "via": "collection_import"}
@@ -1014,7 +1098,7 @@ class ControlExpertBridge:
                 except Exception as exc:  # noqa: BLE001
                     errors.append(f"import_with_strategy: {_format_com_error(exc)}")
                     del exc
-                    return None
+                return project_import()
 
             result = attempt()
             if result:
@@ -1661,7 +1745,19 @@ class ControlExpertBridge:
         except Exception:
             pass
         buses_out = []
-        for bus in self._iter_qi(self._buses(), "IBus"):
+        try:
+            buses = self._buses()
+        except Exception as exc:  # noqa: BLE001 - e.g. SCADAPack/RemoteConnect logic: no CE rack tree
+            out["buses"] = []
+            out["note"] = (
+                "This project has no Control Expert bus/rack configuration "
+                f"({_format_com_error(exc)}). That is normal for OEM logic projects such as "
+                "RemoteConnect SCADAPack x70, whose I/O lives in the RemoteConnect configuration "
+                "(see inventory_remoteconnect_configuration / export_remoteconnect_configuration "
+                "when available).")
+            del exc
+            return out
+        for bus in self._iter_qi(buses, "IBus"):
             bus_info = self._hw_info(bus)
             drops_out = []
             try:
@@ -2526,14 +2622,14 @@ class ControlExpertBridge:
         sets _project_path as it sees fit."""
         self._do_close(False)
         broker = self._broker()
-        self._app = broker.NewApplication()
+        self._app = self._new_native_application(broker)
         try:
             self._app.ImportProject(new_zef)
         except Exception as exc:
             msg = _format_com_error(exc)
             del exc
             try:
-                self._app = broker.NewApplication()
+                self._app = self._new_native_application(broker)
                 self._app.ImportProject(orig_zef)
                 self._project_path = orig_path
                 self._needs_saveas = orig_path is not None
